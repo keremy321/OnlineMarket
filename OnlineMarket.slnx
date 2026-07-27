@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ErpIntegration.Api/ErpIntegration.Api.csproj" />
+    <Project Path="src/MockErp.Api/MockErp.Api.csproj" />
+    <Project Path="src/OnlineMarket.Web/OnlineMarket.Web.csproj" />
+    <Project Path="src/Recommendation.Api/Recommendation.Api.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ErpIntegration.Api.Tests/ErpIntegration.Api.Tests.csproj" />
+    <Project Path="tests/MockErp.Api.Tests/MockErp.Api.Tests.csproj" />
+    <Project Path="tests/OnlineMarket.Web.Tests/OnlineMarket.Web.Tests.csproj" />
+    <Project Path="tests/Recommendation.Api.Tests/Recommendation.Api.Tests.csproj" />
+  </Folder>
+</Solution>
