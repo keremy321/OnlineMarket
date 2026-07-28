@@ -45,6 +45,9 @@ Then read only the compact document selected for the task. Do not load all proje
 10. Do not create Generic Repository, Generic Service, Shared Contracts, MediatR, message brokers, or extra frameworks without an approved decision.
 11. Keep `Program.cs` focused on dependency registration and middleware.
 12. Never commit secrets, connection strings, API keys, or real customer data.
+13. Follow SOLID principles across all component and class designs.
+14. Apply OWASP security standards (e.g. input validation, injection protection, authorization).
+15. Implement comprehensive exception handling and logging for failure scenarios.
 
 ## Checkout Rules
 
