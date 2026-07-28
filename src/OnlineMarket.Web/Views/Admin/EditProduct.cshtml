@@ -1,0 +1,90 @@
+@model OnlineMarket.Web.Models.ProductFormViewModel
+@{
+    ViewData["Title"] = "Ürünü Düzenle";
+}
+
+<div class="row justify-content-center my-4">
+    <div class="col-md-8">
+        <div class="card-custom p-4 shadow-sm border-0 rounded-4">
+            <h3 class="fw-bold mb-3"><i class="bi bi-pencil-square text-primary me-2"></i>Ürün Bilgilerini Düzenle</h3>
+            <p class="text-secondary small mb-4">Ürün güncellendiğinde <code>ProductSnapshotChangedV1</code> outbox mesajı tetiklenir.</p>
+
+            <form asp-action="EditProduct" asp-route-id="@Model.Id" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="Id" />
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label asp-for="Sku" class="form-label fw-semibold">SKU / Barkod</label>
+                        <input asp-for="Sku" class="form-control rounded-3" />
+                        <span asp-validation-for="Sku" class="text-danger small"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="Name" class="form-label fw-semibold">Ürün Adı</label>
+                        <input asp-for="Name" class="form-control rounded-3" />
+                        <span asp-validation-for="Name" class="text-danger small"></span>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label asp-for="CategoryId" class="form-label fw-semibold">Kategori</label>
+                        <select asp-for="CategoryId" class="form-select rounded-3">
+                            @foreach (var c in Model.Categories)
+                            {
+                                <option value="@c.Id" selected="@(Model.CategoryId == c.Id)">@c.Name</option>
+                            }
+                        </select>
+                        <span asp-validation-for="CategoryId" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="BrandId" class="form-label fw-semibold">Marka</label>
+                        <select asp-for="BrandId" class="form-select rounded-3">
+                            @foreach (var b in Model.Brands)
+                            {
+                                <option value="@b.Id" selected="@(Model.BrandId == b.Id)">@b.Name</option>
+                            }
+                        </select>
+                        <span asp-validation-for="BrandId" class="text-danger small"></span>
+                    </div>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label asp-for="Price" class="form-label fw-semibold">Fiyat (KDV Hariç ₺)</label>
+                        <input asp-for="Price" type="number" step="0.01" class="form-control rounded-3" />
+                        <span asp-validation-for="Price" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-md-6">
+                        <label asp-for="VatRate" class="form-label fw-semibold">KDV Oranı (%)</label>
+                        <input asp-for="VatRate" type="number" step="0.01" class="form-control rounded-3" />
+                        <span asp-validation-for="VatRate" class="text-danger small"></span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="Description" class="form-label fw-semibold">Ürün Açıklaması</label>
+                    <textarea asp-for="Description" class="form-control rounded-3" rows="3"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="ImageUrl" class="form-label fw-semibold">Görsel URL</label>
+                    <input asp-for="ImageUrl" class="form-control rounded-3" />
+                </div>
+
+                <div class="form-check mb-4">
+                    <input asp-for="IsActive" class="form-check-input" />
+                    <label asp-for="IsActive" class="form-check-label">Ürün Aktif / Satışta</label>
+                </div>
+
+                <div class="d-flex align-items-center justify-content-between pt-3 border-top">
+                    <a asp-action="Products" class="btn btn-outline-secondary rounded-pill px-4">İptal</a>
+                    <button type="submit" class="btn btn-primary-custom rounded-pill px-4">Güncelle</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

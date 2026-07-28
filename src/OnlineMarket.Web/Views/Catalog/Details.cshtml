@@ -1,0 +1,120 @@
+@model OnlineMarket.Web.Models.ProductDetailViewModel
+@{
+    ViewData["Title"] = Model.Product.Name;
+    var priceWithVat = Model.Product.Price * (1 + Model.Product.VatRate / 100m);
+}
+
+<div class="row g-4 my-4">
+    <div class="col-md-5">
+        <div class="card-custom p-4 text-center bg-white border-0 shadow-sm rounded-4">
+            <img src="@(string.IsNullOrEmpty(Model.Product.ImageUrl) ? "https://placehold.co/400x400?text=Urun" : Model.Product.ImageUrl)" class="img-fluid rounded-3" style="max-height: 350px; object-fit: contain;" alt="@Model.Product.Name" />
+        </div>
+    </div>
+
+    <div class="col-md-7">
+        <div class="card-custom p-4 border-0 shadow-sm rounded-4 h-100 d-flex flex-column">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+                <span class="badge bg-primary-subtle text-primary fw-bold px-3 py-2 rounded-pill">@Model.Product.CategoryName • @Model.Product.BrandName</span>
+                <span class="text-secondary small fw-semibold">SKU: @Model.Product.Sku</span>
+            </div>
+
+            <h2 class="fw-bold text-dark mb-3">@Model.Product.Name</h2>
+            <p class="text-secondary mb-4">@(string.IsNullOrEmpty(Model.Product.Description) ? "Bu ürün için açıklama bulunmamaktadır." : Model.Product.Description)</p>
+
+            <div class="p-3 bg-light rounded-3 mb-4 d-flex align-items-center justify-content-between">
+                <div>
+                    <span class="text-secondary small d-block">KDV Hariç Fiyat</span>
+                    <span class="price-tag fs-3">@Model.Product.Price.ToString("N2") ₺</span>
+                    <span class="text-secondary small ms-2">(+%@Model.Product.VatRate KDV dahil: <strong>@priceWithVat.ToString("N2") ₺</strong>)</span>
+                </div>
+                <div>
+                    @if (Model.Product.IsInStock)
+                    {
+                        <span class="badge bg-success-subtle text-success fs-6 px-3 py-2 rounded-pill"><i class="bi bi-check-circle me-1"></i> Stokta (@Model.Product.StockQuantity Adet)</span>
+                    }
+                    else
+                    {
+                        <span class="badge bg-danger-subtle text-danger fs-6 px-3 py-2 rounded-pill"><i class="bi bi-x-circle me-1"></i> Stok Tükendi</span>
+                    }
+                </div>
+            </div>
+
+            <form asp-controller="Cart" asp-action="AddToCart" method="post" class="mt-auto d-flex gap-3">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="productId" value="@Model.Product.Id" />
+                <div style="width: 100px;">
+                    <input type="number" name="quantity" value="1" min="1" max="@Model.Product.StockQuantity" class="form-control form-control-lg text-center rounded-3" @(Model.Product.IsInStock ? "" : "disabled") />
+                </div>
+                <button type="submit" class="btn btn-primary-custom btn-lg flex-grow-1 rounded-pill" @(Model.Product.IsInStock ? "" : "disabled")>
+                    <i class="bi bi-cart-plus me-2"></i> Sepete Ekle
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Frequently Bought Together Recommendations -->
+@if (Model.FrequentlyBoughtTogether.Any())
+{
+    <div class="my-5">
+        <div class="d-flex align-items-center mb-3">
+            <span class="badge-recommendation badge-fbt me-2"><i class="bi bi-bag-check-fill"></i> Birlikte Alınanlar</span>
+            <h4 class="fw-bold mb-0">Sıklıkla Birlikte Alınan Ürünler</h4>
+        </div>
+        <div class="row g-3">
+            @foreach (var rec in Model.FrequentlyBoughtTogether)
+            {
+                if (rec.ProductDetails != null)
+                {
+                    <div class="col-6 col-md-3">
+                        <div class="card-custom p-3 h-100 text-center border-0 shadow-sm">
+                            <img src="@(string.IsNullOrEmpty(rec.ProductDetails.ImageUrl) ? "https://placehold.co/150x150?text=Urun" : rec.ProductDetails.ImageUrl)" class="img-fluid rounded mb-2" style="max-height: 100px; object-fit: contain;" />
+                            <h6 class="fw-bold text-truncate mb-1">
+                                <a asp-action="Details" asp-route-id="@rec.ProductDetails.Id" class="text-dark text-decoration-none">@rec.ProductDetails.Name</a>
+                            </h6>
+                            <div class="price-tag fs-6 mb-2">@rec.ProductDetails.Price.ToString("N2") ₺</div>
+                            <form asp-controller="Cart" asp-action="AddToCart" method="post">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="productId" value="@rec.ProductDetails.Id" />
+                                <button type="submit" class="btn btn-sm btn-outline-success w-100 rounded-pill"><i class="bi bi-cart-plus me-1"></i> Ekle</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}
+
+<!-- Similar Products Recommendations -->
+@if (Model.SimilarProducts.Any())
+{
+    <div class="my-5">
+        <div class="d-flex align-items-center mb-3">
+            <span class="badge-recommendation badge-similar me-2"><i class="bi bi-grid-fill"></i> Benzer Ürünler</span>
+            <h4 class="fw-bold mb-0">Benzer Ürün Önerileri</h4>
+        </div>
+        <div class="row g-3">
+            @foreach (var rec in Model.SimilarProducts)
+            {
+                if (rec.ProductDetails != null)
+                {
+                    <div class="col-6 col-md-3">
+                        <div class="card-custom p-3 h-100 text-center border-0 shadow-sm">
+                            <img src="@(string.IsNullOrEmpty(rec.ProductDetails.ImageUrl) ? "https://placehold.co/150x150?text=Urun" : rec.ProductDetails.ImageUrl)" class="img-fluid rounded mb-2" style="max-height: 100px; object-fit: contain;" />
+                            <h6 class="fw-bold text-truncate mb-1">
+                                <a asp-action="Details" asp-route-id="@rec.ProductDetails.Id" class="text-dark text-decoration-none">@rec.ProductDetails.Name</a>
+                            </h6>
+                            <div class="price-tag fs-6 mb-2">@rec.ProductDetails.Price.ToString("N2") ₺</div>
+                            <form asp-controller="Cart" asp-action="AddToCart" method="post">
+                                @Html.AntiForgeryToken()
+                                <input type="hidden" name="productId" value="@rec.ProductDetails.Id" />
+                                <button type="submit" class="btn btn-sm btn-outline-warning w-100 rounded-pill"><i class="bi bi-cart-plus me-1"></i> Ekle</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}

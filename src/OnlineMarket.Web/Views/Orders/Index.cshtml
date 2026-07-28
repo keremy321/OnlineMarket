@@ -1,0 +1,64 @@
+@model List<OnlineMarket.Web.Application.Models.OrderDto>
+@{
+    ViewData["Title"] = "Sipariş Geçmişim";
+}
+
+<div class="my-4">
+    <h2 class="fw-bold mb-1"><i class="bi bi-box-seam text-primary me-2"></i>Sipariş Geçmişim</h2>
+    <p class="text-secondary small mb-4">Verdiğiniz tüm siparişleri ve durumlarını buradan takip edebilirsiniz.</p>
+
+    @if (!Model.Any())
+    {
+        <div class="card-custom p-5 text-center my-4">
+            <i class="bi bi-inbox display-1 text-secondary mb-3"></i>
+            <h4 class="fw-bold">Henüz Siparişiniz Bulunmamaktadır</h4>
+            <p class="text-secondary">İlk siparişinizi vermek için hemen kataloğu gezmeye başlayın.</p>
+            <a asp-controller="Catalog" asp-action="Index" class="btn btn-primary-custom rounded-pill mt-2">Kataloğa Git</a>
+        </div>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-3">
+            @foreach (var order in Model)
+            {
+                <div class="card-custom p-4 border-0 shadow-sm rounded-4">
+                    <div class="d-flex flex-wrap align-items-center justify-content-between border-bottom pb-3 mb-3 gap-2">
+                        <div>
+                            <span class="text-secondary small d-block">Sipariş No</span>
+                            <span class="fw-bold text-dark fs-5">#@order.OrderNumber</span>
+                        </div>
+                        <div>
+                            <span class="text-secondary small d-block">Tarih</span>
+                            <span class="fw-semibold">@order.PlacedAtUtc.ToLocalTime().ToString("g")</span>
+                        </div>
+                        <div>
+                            <span class="text-secondary small d-block">Toplam Tutar</span>
+                            <span class="price-tag fs-5">@order.GrandTotal.ToString("N2") ₺</span>
+                        </div>
+                        <div>
+                            <span class="status-pill status-completed"><i class="bi bi-check-circle-fill me-1"></i> Onaylandı</span>
+                        </div>
+                        <div>
+                            <a asp-action="Details" asp-route-id="@order.Id" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+                                Detayları Gör <i class="bi bi-arrow-right ms-1"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="d-flex align-items-center gap-3 overflow-auto">
+                        @foreach (var item in order.Items.Take(4))
+                        {
+                            <div class="badge bg-light text-dark border p-2 rounded-3 text-start fw-normal">
+                                <strong>@item.ProductNameSnapshot</strong> x @item.Quantity
+                            </div>
+                        }
+                        @if (order.Items.Count > 4)
+                        {
+                            <span class="text-secondary small">+@(order.Items.Count - 4) diğer ürün</span>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>

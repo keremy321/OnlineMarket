@@ -1,0 +1,26 @@
+@model OnlineMarket.Web.Models.OrderSuccessViewModel
+@{
+    ViewData["Title"] = "Sipariş Alındı";
+}
+
+<div class="row justify-content-center my-5">
+    <div class="col-md-6 text-center">
+        <div class="card-custom p-5 shadow-lg border-0 rounded-4">
+            <div class="mb-4">
+                <i class="bi bi-check-circle-fill text-success display-1"></i>
+            </div>
+            <h2 class="fw-bold mb-2">Siparişiniz Harika Şekilde Alındı!</h2>
+            <p class="text-secondary lead">Sipariş No: <strong class="text-primary">#@Model.OrderNumber</strong></p>
+            <p class="text-secondary small mb-4">Siparişinizin durumu ve detayları hesabınızdaki siparişler bölümünden takip edilebilir. Outbox mesajları arka planda ERP ve Tavsiye servislerine aktarılacaktır.</p>
+
+            <div class="d-flex justify-content-center gap-3">
+                <a asp-controller="Orders" asp-action="Details" asp-route-id="@Model.OrderId" class="btn btn-outline-primary rounded-pill px-4">
+                    <i class="bi bi-eye me-1"></i> Sipariş Detayı
+                </a>
+                <a asp-controller="Catalog" asp-action="Index" class="btn btn-primary-custom rounded-pill px-4">
+                    <i class="bi bi-bag me-1"></i> Alışverişe Devam Et
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
