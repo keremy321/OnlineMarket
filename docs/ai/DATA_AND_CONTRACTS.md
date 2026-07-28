@@ -116,6 +116,10 @@ Must not contain address, email, phone, payment, or financial details.
 
 Carries order, customer, selected address, totals, and item snapshots required for durable ERP retry.
 
+Each `ProductId` may appear at most once in `Items`. The ERP Integration
+consumer rejects duplicate product lines during request validation; it does
+not merge or normalise them.
+
 ## Event Idempotency
 
 - Same `EventId` and same payload hash: successful replay.
