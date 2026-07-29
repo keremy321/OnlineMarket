@@ -56,8 +56,22 @@ Start the container:
 ```
 
 The script uses the absolute Compose and environment-file paths resolved from
-its own location, waits for the container health check, and returns a nonzero
-exit code if SQL Server does not become healthy.
+its own location. It first runs the one-shot `sqlserver-volume-init` service,
+confirms that the initializer exited successfully, starts SQL Server, waits for
+the container health check, and returns a nonzero exit code on initialization
+or health failure.
+
+The initializer uses the same pinned image, runs temporarily as `0:0`, and
+performs only these idempotent operations against `/var/opt/mssql`:
+
+```text
+chown -R 10001:0 /var/opt/mssql
+chmod -R g=u /var/opt/mssql
+```
+
+It has no ports, SQL password, health check, network, privileged mode, or
+restart loop. The actual `sqlserver` service continues to run as the image's
+default non-root `mssql` user. No world-writable permission is granted.
 
 Equivalent manual Compose commands must include the environment file:
 
@@ -226,6 +240,10 @@ staging, or production database.
   `deploy/.env` and replace its visible placeholder locally.
 - Password policy error: use at least eight characters with uppercase,
   lowercase, numeric, and special characters.
+- Volume initialization error: inspect the exited
+  `sqlserver-volume-init` service. The named volume must be owned by UID
+  `10001`, GID `0`, with group permissions matching the owner. Do not use
+  `chmod 777`, delete the volume, or run SQL Server permanently as root.
 - Port 1433 conflict: stop the conflicting local service or change the local
   port mapping and all four local connection strings together.
 - TLS error: retain `Encrypt=True;TrustServerCertificate=True` for this local

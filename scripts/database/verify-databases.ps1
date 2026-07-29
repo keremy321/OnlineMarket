@@ -161,9 +161,12 @@ else {
     }
     else {
         # sqlcmd runs inside the container and reads the password only from the
-        # container environment. The command and credential are never echoed.
+        # container environment. Base64 transport preserves nested Bash quoting
+        # on Windows without embedding or echoing the credential.
         $queryCommand = '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -b -h -1 -W -Q "SET NOCOUNT ON; SELECT [name] FROM sys.databases WHERE [name] IN (''OnlineMarketDb'',''RecommendationDb'',''IntegrationDb'',''MockErpDb'') ORDER BY [name];"'
-        $queryOutput = @(& docker exec $containerName /bin/bash -c $queryCommand 2>$null)
+        $queryPayload = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($queryCommand))
+        $queryRunner = "echo $queryPayload|base64 -d|/bin/bash"
+        $queryOutput = @(& docker exec $containerName /bin/bash -c $queryRunner 2>$null)
         if ($LASTEXITCODE -ne 0) {
             $verificationFailure = $true
             Write-Host "SQL Server connectivity verification failed inside the container. Credential details were suppressed." -ForegroundColor Red

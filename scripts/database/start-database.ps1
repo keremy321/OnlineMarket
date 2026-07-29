@@ -5,13 +5,32 @@ $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).
 $composeFile = (Resolve-Path -LiteralPath (Join-Path $repositoryRoot "deploy\docker-compose.database.yml")).Path
 $environmentFile = Join-Path $repositoryRoot "deploy\.env"
 $containerName = "online-market-sqlserver"
+$volumeInitServiceName = "sqlserver-volume-init"
+$databaseServiceName = "sqlserver"
 
 if (-not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
     throw "Missing local environment file '$environmentFile'. Copy deploy/.env.example to deploy/.env and replace the non-production password placeholder."
 }
 
+Write-Host "Preparing SQL Server volume ownership for the image-default non-root user..." -ForegroundColor Cyan
+& docker compose --env-file $environmentFile -f $composeFile up --no-deps --force-recreate $volumeInitServiceName
+if ($LASTEXITCODE -ne 0) {
+    throw "The SQL Server volume initialization service failed."
+}
+
+$volumeInitContainerId = & docker compose --env-file $environmentFile -f $composeFile ps --all --quiet $volumeInitServiceName
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($volumeInitContainerId)) {
+    throw "The SQL Server volume initialization container could not be inspected."
+}
+
+$volumeInitState = & docker inspect --format "{{.State.Status}}|{{.State.ExitCode}}" $volumeInitContainerId 2>$null
+if ($LASTEXITCODE -ne 0 -or $volumeInitState -ne "exited|0") {
+    throw "The SQL Server volume initialization container did not complete successfully."
+}
+
+Write-Host "SQL Server volume ownership preparation completed successfully." -ForegroundColor Green
 Write-Host "Starting the pinned SQL Server 2022 development container..." -ForegroundColor Green
-& docker compose --env-file $environmentFile -f $composeFile up -d
+& docker compose --env-file $environmentFile -f $composeFile up -d --no-deps $databaseServiceName
 if ($LASTEXITCODE -ne 0) {
     throw "Docker Compose could not start the SQL Server development container."
 }

@@ -1,8 +1,25 @@
 services:
+  sqlserver-volume-init:
+    image: mcr.microsoft.com/mssql/server:2022-CU22-GDR1-ubuntu-22.04@sha256:bf438d7104f861f5e1e1ba14b063d60a5bd883964b3c9b3b3c0064536177baa5
+    user: "0:0"
+    restart: "no"
+    network_mode: "none"
+    read_only: true
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        chown -R 10001:0 /var/opt/mssql &&
+        chmod -R g=u /var/opt/mssql
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-CU22-GDR1-ubuntu-22.04@sha256:bf438d7104f861f5e1e1ba14b063d60a5bd883964b3c9b3b3c0064536177baa5
     container_name: online-market-sqlserver
     restart: unless-stopped
+    depends_on:
+      sqlserver-volume-init:
+        condition: service_completed_successfully
     environment:
       ACCEPT_EULA: ${ACCEPT_EULA:?ACCEPT_EULA is required}
       MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?MSSQL_SA_PASSWORD is required}
