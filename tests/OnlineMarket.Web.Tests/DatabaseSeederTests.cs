@@ -1,72 +1,127 @@
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using OnlineMarket.Web.Domain.Entities;
 using OnlineMarket.Web.Infrastructure.Persistence;
-using Xunit;
 
 namespace OnlineMarket.Web.Tests;
 
-public class DatabaseSeederTests
+[Collection(OnlineMarketSqlServerCollection.CollectionName)]
+public sealed class DatabaseSeederTests
 {
-    private DbContextOptions<OnlineMarketDbContext> CreateLocalDbOptions(string dbName)
+    private readonly OnlineMarketSqlServerFixture fixture;
+
+    public DatabaseSeederTests(OnlineMarketSqlServerFixture fixture)
     {
-        var connectionString = $"Server=(localdb)\\mssqllocaldb;Database={dbName};Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True;";
-        return new DbContextOptionsBuilder<OnlineMarketDbContext>()
-            .UseSqlServer(connectionString)
-            .Options;
+        this.fixture = fixture;
     }
 
     [Fact]
-    public async Task Seeder_Populates_AdminUser_Roles_Categories_Brands_Products_Stocks_And_StockMovements()
+    public async Task CanonicalSeedIsRepeatableAndDoesNotResetLegitimateStock()
     {
-        var dbName = $"Test_SeederDb_{Guid.NewGuid():N}";
-        var options = CreateLocalDbOptions(dbName);
+        await using var database = await fixture.CreateDatabaseAsync();
+        await using var provider = CreateServiceProvider(database.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<OnlineMarketDbContext>();
+        var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+        var adminEmail = $"{Guid.NewGuid():N}@example.test";
+        var adminPassword = $"Seed!{Guid.NewGuid():N}aA9";
+        var credentials = new SeedAdminCredentials(adminEmail, adminPassword);
+        var canonicalPath = GetCanonicalCatalogPath();
 
-        using var context = new OnlineMarketDbContext(options);
-        try
-        {
-            await context.Database.MigrateAsync();
+        await seeder.SeedAsync(canonicalPath, credentials);
 
-            var userStore = new UserStore<ApplicationUser, IdentityRole<Guid>, OnlineMarketDbContext, Guid>(context);
-            var roleStore = new RoleStore<IdentityRole<Guid>, OnlineMarketDbContext, Guid>(context);
+        Assert.True(await roleManager.RoleExistsAsync("Admin"));
+        Assert.True(await roleManager.RoleExistsAsync("Customer"));
+        var admin = await userManager.FindByEmailAsync(adminEmail);
+        Assert.NotNull(admin);
+        Assert.True(await userManager.IsInRoleAsync(admin, "Admin"));
 
-            var userManager = new UserManager<ApplicationUser>(
-                userStore, null!, new PasswordHasher<ApplicationUser>(), null!, null!, null!, null!, null!, null!);
-            var roleManager = new RoleManager<IdentityRole<Guid>>(
-                roleStore, null!, null!, null!, null!);
+        var firstCounts = await GetCountsAsync(context);
+        Assert.Equal((4, 3, 10, 10, 10), firstCounts);
 
-            var catalogPath = Path.Combine(AppContext.BaseDirectory, "../../../../../scripts/seed/catalog.v1.json");
-            catalogPath = Path.GetFullPath(catalogPath);
+        var stock = await context.Stocks.OrderBy(candidate => candidate.ProductId).FirstAsync();
+        var changedQuantity = stock.Quantity - 7;
+        stock.Quantity = changedQuantity;
+        stock.UpdatedAtUtc = DateTime.UtcNow;
+        await context.SaveChangesAsync();
 
-            // Act
-            await DatabaseSeeder.SeedAsync(context, userManager, roleManager, catalogPath);
+        await seeder.SeedAsync(canonicalPath, credentials);
+        context.ChangeTracker.Clear();
 
-            // Assert
-            var adminUser = await userManager.FindByEmailAsync("admin@onlinemarket.com");
-            Assert.NotNull(adminUser);
+        Assert.Equal(firstCounts, await GetCountsAsync(context));
+        Assert.Equal(
+            changedQuantity,
+            await context.Stocks
+                .Where(candidate => candidate.ProductId == stock.ProductId)
+                .Select(candidate => candidate.Quantity)
+                .SingleAsync());
+    }
 
-            var hasAdminRole = await userManager.IsInRoleAsync(adminUser, "Admin");
-            Assert.True(hasAdminRole);
+    [Fact]
+    public async Task OmittedAdminConfigurationCreatesNoUsableCredential()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        await using var provider = CreateServiceProvider(database.ConnectionString);
+        await using var scope = provider.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<OnlineMarketDbContext>();
+        var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
 
-            var categoriesCount = await context.Categories.CountAsync();
-            Assert.True(categoriesCount >= 4);
+        await seeder.SeedAsync(
+            GetCanonicalCatalogPath(),
+            new SeedAdminCredentials(null, null));
+        await seeder.SeedAsync(
+            GetCanonicalCatalogPath(),
+            new SeedAdminCredentials(null, null));
 
-            var brandsCount = await context.Brands.CountAsync();
-            Assert.True(brandsCount >= 3);
+        Assert.Equal(0, await context.Users.CountAsync());
+        Assert.Equal(10, await context.Products.CountAsync());
+        Assert.Equal(10, await context.Stocks.CountAsync());
+        Assert.Equal(10, await context.StockMovements.CountAsync());
+    }
 
-            var productsCount = await context.Products.CountAsync();
-            Assert.True(productsCount >= 10);
+    private static ServiceProvider CreateServiceProvider(string connectionString)
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<OnlineMarketDbContext>(
+            options => options.UseSqlServer(connectionString));
+        services.AddIdentityCore<ApplicationUser>(options =>
+            {
+                options.User.RequireUniqueEmail = true;
+                options.Password.RequiredLength = 8;
+                options.Password.RequireDigit = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequireUppercase = true;
+                options.Password.RequireNonAlphanumeric = true;
+            })
+            .AddRoles<IdentityRole<Guid>>()
+            .AddEntityFrameworkStores<OnlineMarketDbContext>();
+        services.AddScoped<DatabaseSeeder>();
+        return services.BuildServiceProvider();
+    }
 
-            var stocksCount = await context.Stocks.CountAsync();
-            Assert.Equal(productsCount, stocksCount);
+    private static string GetCanonicalCatalogPath()
+    {
+        var path = Path.Combine(
+            AppContext.BaseDirectory,
+            "Seed",
+            "catalog.v1.json");
+        Assert.True(File.Exists(path));
+        Assert.Equal("catalog.v1.json", Path.GetFileName(path));
+        return path;
+    }
 
-            var movementsCount = await context.StockMovements.CountAsync();
-            Assert.Equal(productsCount, movementsCount);
-        }
-        finally
-        {
-            await context.Database.EnsureDeletedAsync();
-        }
+    private static async Task<(int Categories, int Brands, int Products, int Stocks, int Movements)>
+        GetCountsAsync(OnlineMarketDbContext context)
+    {
+        return (
+            await context.Categories.CountAsync(),
+            await context.Brands.CountAsync(),
+            await context.Products.CountAsync(),
+            await context.Stocks.CountAsync(),
+            await context.StockMovements.CountAsync());
     }
 }

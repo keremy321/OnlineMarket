@@ -7,11 +7,15 @@ using OnlineMarket.Web.Infrastructure.Http;
 using OnlineMarket.Web.Infrastructure.Persistence;
 using OnlineMarket.Web.Infrastructure.Workers;
 
+var seedDevelopmentData = args.Contains(
+    "--seed-development-data",
+    StringComparer.OrdinalIgnoreCase);
 var builder = WebApplication.CreateBuilder(args);
 
 // Add DbContext
 var connectionString = builder.Configuration.GetConnectionString("OnlineMarketDb")
-    ?? "Server=(localdb)\\mssqllocaldb;Database=OnlineMarketDb;Trusted_Connection=True;MultipleActiveResultSets=true";
+    ?? throw new InvalidOperationException(
+        "ConnectionStrings:OnlineMarketDb must be supplied through approved configuration.");
 
 builder.Services.AddDbContext<OnlineMarketDbContext>(options =>
     options.UseSqlServer(connectionString));
@@ -45,7 +49,13 @@ builder.Services.AddScoped<ICatalogService, CatalogService>();
 builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<ICheckoutService, CheckoutService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
+builder.Services.AddScoped<IAdminQueryService, AdminQueryService>();
 builder.Services.AddScoped<IOutboxService, OutboxService>();
+builder.Services.AddScoped<IStockMutationService, SqlServerStockMutationService>();
+builder.Services.AddScoped<IOrderNumberGenerator, SqlServerOrderNumberGenerator>();
+builder.Services.AddScoped<IOutboxStore, SqlServerOutboxStore>();
+builder.Services.AddScoped<IOutboxDispatcher, HttpOutboxDispatcher>();
+builder.Services.AddScoped<DatabaseSeeder>();
 
 // Configure HTTP Clients for External Services with Short Timeouts
 var recommendationApiUrl = builder.Configuration["Services:RecommendationApi"] ?? "http://localhost:5001";
@@ -82,24 +92,32 @@ builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
 
-// Ensure Database Created, Migrated, and Seeded at Startup
-using (var scope = app.Services.CreateScope())
+if (seedDevelopmentData)
 {
-    var dbContext = scope.ServiceProvider.GetRequiredService<OnlineMarketDbContext>();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+    if (!app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "The explicit database seed operation is available only in the Development environment.");
+    }
 
-    try
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<OnlineMarketDbContext>();
+    if ((await dbContext.Database.GetPendingMigrationsAsync()).Any())
     {
-        dbContext.Database.Migrate();
-        var catalogSeedPath = Path.Combine(app.Environment.ContentRootPath, "catalog-seed.json");
-        DatabaseSeeder.SeedAsync(dbContext, userManager, roleManager, catalogSeedPath).GetAwaiter().GetResult();
+        throw new InvalidOperationException(
+            "Apply OnlineMarketDb migrations with the controlled database tooling before running the seed command.");
     }
-    catch (Exception ex)
-    {
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while seeding the OnlineMarketDb database.");
-    }
+
+    var catalogSeedPath = Path.Combine(
+        AppContext.BaseDirectory,
+        "Seed",
+        "catalog.v1.json");
+    var credentials = new SeedAdminCredentials(
+        app.Configuration["SeedAdmin:Email"],
+        app.Configuration["SeedAdmin:Password"]);
+    var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
+    await seeder.SeedAsync(catalogSeedPath, credentials);
+    return;
 }
 
 // Configure HTTP pipeline

@@ -1,4 +1,4 @@
-@model List<OnlineMarket.Web.Domain.Entities.OutboxMessage>
+@model List<OnlineMarket.Web.Models.AdminOutboxMessageViewModel>
 @{
     ViewData["Title"] = "Outbox Olay Takip Paneli";
 }
@@ -64,7 +64,7 @@
                             <td class="fw-bold text-center">@msg.AttemptCount</td>
                             <td class="text-secondary">@msg.OccurredAtUtc.ToLocalTime().ToString("g")</td>
                             <td class="text-secondary">@(msg.ProcessedAtUtc.HasValue ? msg.ProcessedAtUtc.Value.ToLocalTime().ToString("g") : "-")</td>
-                            <td class="text-danger small text-truncate" style="max-width: 180px;" title="@msg.LastError">@(string.IsNullOrEmpty(msg.LastError) ? "-" : msg.LastError)</td>
+                            <td class="text-danger small text-truncate" style="max-width: 180px;" title="@msg.LastErrorCode">@(string.IsNullOrEmpty(msg.MaskedLastError) ? "-" : msg.MaskedLastError)</td>
                         </tr>
                     }
                 </tbody>

@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using OnlineMarket.Web.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using OnlineMarket.Web.Infrastructure.Persistence;
 namespace OnlineMarket.Web.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(OnlineMarketDbContext))]
-    partial class OnlineMarketDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260729135620_AlignOnlineMarketSchema")]
+    partial class AlignOnlineMarketSchema
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

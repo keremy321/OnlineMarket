@@ -466,10 +466,9 @@ Authoritative market product master used for catalogue display, checkout price/V
 
 - `UX_Products_Sku (unique)`
 - `UX_Products_Slug (unique)`
-- `IX_Products_CategoryId_IsActive_Name`
 - `IX_Products_BrandId_IsActive_Name`
 - `IX_Products_IsActive_Price`
-- `IX_Products_CategoryId_IsActive_Name INCLUDE (Price, BrandId, ImageUrl)`
+- `IX_Products_CategoryId_IsActive_Name_Covering (CategoryId, IsActive, Name) INCLUDE (Price, BrandId, ImageUrl)`
 
 **Check constraints**
 
@@ -661,8 +660,11 @@ Market order header. It contains only market order state; ERP state is queried f
 **Behavioural rules**
 
 - One source cart can create only one order.
-- Order number generation must be concurrency-safe, e.g. SQL sequence or a tested generator.
-- Example format: `OM-20260725-000001`.
+- Order numbers use the database-owned `dbo.OnlineMarketOrderNumberSequence`,
+  a `bigint` sequence starting at 1 and incrementing by 1.
+- The application formats an allocated value as `ORD-` plus 20 zero-padded
+  digits. Sequence gaps after a rolled-back transaction are expected and do
+  not compromise uniqueness.
 
 
 ### `OrderAddresses`
@@ -2141,6 +2143,19 @@ Modules/Payments/Domain/Entities
 Common/Messaging or root persistence for Outbox
 ```
 
+Compatibility note for the reconciled Online Market implementation:
+
+- Existing entity, enum, application-service, and EF configuration source
+  remains in the pre-existing `Domain`, `Application`, and root
+  `Infrastructure/Persistence/Configurations` folders.
+- Moving those CLR types only for folder cosmetics would add namespace and
+  migration-history regression risk without changing runtime ownership.
+- New integration-event DTOs, canonical serialization, and outbox creation
+  live under `Common/Messaging`; SQL-specific stock, order-number, and outbox
+  operations remain in Infrastructure behind application interfaces.
+- A later physical module move requires a separately reviewed refactor that
+  proves the shared migration and EF model remain compatible.
+
 Their configurations live in module `Infrastructure/Persistence` or the root `Infrastructure/Persistence/Configurations` as documented by the code structure.
 
 API service entities live under:
@@ -2271,6 +2286,12 @@ Seed:
 - brands,
 - products,
 - initial Stocks and Initial StockMovements.
+
+The Online Market seeder is an explicit Development-only operation. Ordinary
+application startup never applies migrations or runs seed data. It reads the
+canonical `scripts/seed/catalog.v1.json` file linked into the application
+output and receives optional admin email/password only through
+`SeedAdmin:Email` and `SeedAdmin:Password` configuration.
 
 ## 15.3 Mock ERP seed
 

@@ -48,6 +48,14 @@ Infrastructure implements external and persistence concerns.
 
 Admin UI is an MVC Area, not a separate domain module.
 
+The existing Online Market CLR entity/configuration namespaces remain in their
+pre-reconciliation folders to preserve compatibility with the shared initial
+migration. New integration-event DTOs and canonical serialization are owned by
+`Common/Messaging`, while SQL-specific stock mutation, order-number allocation,
+and outbox persistence stay in Infrastructure behind application interfaces.
+A physical module move is deferred because a cosmetic move provides no runtime
+benefit and creates avoidable migration-history risk.
+
 ## Checkout Transaction
 
 Inside one SQL transaction:
@@ -66,6 +74,17 @@ No HTTP request is allowed inside this transaction.
 
 `OrderReadyForErpV1` carries the non-sensitive payment method together with
 customer, delivery-address, total, and item snapshots.
+
+Order numbers are allocated from the SQL Server
+`OnlineMarketOrderNumberSequence`; sequence gaps are allowed, while the unique
+order-number index remains the final database guarantee.
+
+## Database Lifecycle
+
+Ordinary application startup does not apply migrations, create schema, seed
+catalogue data, or delete development data. Schema changes use the controlled
+database scripts. Catalogue/role/admin seeding is an explicit Development-only
+command that assumes all migrations are already applied.
 
 ## Outbox
 

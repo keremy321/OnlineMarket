@@ -160,12 +160,37 @@ reported and skipped. A failed update for a `Ready` context returns a nonzero
 exit code, and the final table reports every database. Before updating a
 `Ready` context, the script requires its exact connection-string environment
 variable and verifies that it names the expected database on `127.0.0.1` or
-`localhost`. This prevents the existing Web LocalDB fallback or a remote server
-from being selected implicitly.
+`localhost`. This prevents an unconfigured local target or a remote server from
+being selected implicitly.
 
 The current branch has implemented contexts and migrations for all four
 application databases. `OnlineMarketDb`, `RecommendationDb`, `IntegrationDb`,
 and `MockErpDb` are expected to be classified as `Ready`.
+
+## Seed OnlineMarket development data explicitly
+
+Ordinary `OnlineMarket.Web` startup never applies migrations or seed data.
+After `OnlineMarketDb` migrations are current, the Development-only seed
+operation can be run explicitly:
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+$env:SeedAdmin__Email = '<LOCAL_ADMIN_EMAIL>'
+$env:SeedAdmin__Password = '<LOCAL_ONLY_ADMIN_PASSWORD>'
+dotnet run --project .\src\OnlineMarket.Web\OnlineMarket.Web.csproj -c Release -- --seed-development-data
+```
+
+The command reads the canonical `scripts/seed/catalog.v1.json` source linked
+into the application build output. It creates missing `Customer`/`Admin`
+roles, the configured admin, and missing catalogue/stock/initial-movement
+records. Rerunning it does not delete transactional data, duplicate seed rows,
+or reset an existing stock balance. If both admin settings are omitted, roles
+and catalogue data are seeded without creating an admin account. Supplying
+only one admin setting is rejected. Never print or commit the password.
+
+The seed command does not call `Migrate`, `EnsureCreated`, or
+`EnsureDeleted`. If migrations are pending, it stops and instructs the
+operator to use the controlled migration tooling first.
 
 ## Generate idempotent SQL
 
@@ -228,10 +253,10 @@ Database integration tests should prefer an isolated SQL Server Testcontainers
 instance when their owning application phase adds those tests. Testcontainers
 must use non-production credentials and disposable storage.
 
-LocalDB may be used as a Windows-only fallback for focused development where
-Docker is unavailable, but it does not replace validation against the pinned
-SQL Server 2022 container. Never point reset or migration scripts at a shared,
-staging, or production database.
+The Online Market database integration suite uses an isolated SQL Server 2022
+Testcontainers resource with random host-port allocation and unique database
+names. LocalDB is not used by that suite. Never point reset or migration
+scripts at a shared, staging, or production database.
 
 ## Troubleshooting
 
@@ -256,9 +281,6 @@ staging, or production database.
 
 ## Known deferred risks
 
-- `OnlineMarket.Web` currently applies migrations and seeds data during
-  application startup. Removing that behavior requires a separately approved
-  application change and is not handled by these environment scripts.
 - The repository audit found a high-severity advisory affecting the current
   `Microsoft.OpenApi` 2.0.0 dependency graph. Package alignment belongs in a
   separate package-security task; this phase does not change package

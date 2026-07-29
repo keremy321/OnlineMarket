@@ -56,6 +56,14 @@ public interface IOrderService
     Task<List<OrderDto>> GetAllOrdersForAdminAsync();
 }
 
+public interface IAdminQueryService
+{
+    Task<AdminDashboardDto> GetDashboardAsync(CancellationToken cancellationToken = default);
+    Task<List<AdminOutboxMessageDto>> GetRecentOutboxMessagesAsync(
+        int count,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IRecommendationClient
 {
     Task<List<RecommendationItemDto>> GetPopularRecommendationsAsync(int count = 5);
@@ -72,6 +80,45 @@ public interface IErpIntegrationClient
 
 public interface IOutboxService
 {
-    Task CreateOutboxMessageAsync<T>(string eventType, string destination, string aggregateType, Guid aggregateId, T eventPayload, Guid correlationId);
     Task ProcessPendingMessagesAsync(int batchSize = 10, CancellationToken cancellationToken = default);
+}
+
+public interface IStockMutationService
+{
+    Task<StockMutationResultDto?> TryDecreaseAsync(
+        Guid productId,
+        int requestedQuantity,
+        DateTime updatedAtUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<StockMutationResultDto?> TryAdjustAsync(
+        Guid productId,
+        int quantityChange,
+        DateTime updatedAtUtc,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IOrderNumberGenerator
+{
+    Task<string> NextAsync(CancellationToken cancellationToken = default);
+}
+
+public interface IOutboxStore
+{
+    Task<IReadOnlyList<ClaimedOutboxMessageDto>> ClaimAsync(
+        int batchSize,
+        string workerId,
+        DateTime claimedAtUtc,
+        CancellationToken cancellationToken = default);
+
+    Task RecordDeliveryResultAsync(
+        OutboxDeliveryResultDto result,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IOutboxDispatcher
+{
+    Task<OutboxDispatchResultDto> DispatchAsync(
+        ClaimedOutboxMessageDto message,
+        CancellationToken cancellationToken = default);
 }
