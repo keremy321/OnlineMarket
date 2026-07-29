@@ -1,0 +1,177 @@
+{
+  "categories": [
+    {
+      "id": "11111111-1111-1111-1111-111111111111",
+      "name": "Meyve & Sebze",
+      "slug": "meyve-sebze",
+      "displayOrder": 1
+    },
+    {
+      "id": "22222222-2222-2222-2222-222222222222",
+      "name": "Süt & Kahvaltılık",
+      "slug": "sut-kahvaltilik",
+      "displayOrder": 2
+    },
+    {
+      "id": "33333333-3333-3333-3333-333333333333",
+      "name": "Temel Gıda",
+      "slug": "temel-gida",
+      "displayOrder": 3
+    },
+    {
+      "id": "44444444-4444-4444-4444-444444444444",
+      "name": "İçecekler",
+      "slug": "icecekler",
+      "displayOrder": 4
+    }
+  ],
+  "brands": [
+    {
+      "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "name": "Taze Çiftlik",
+      "slug": "taze-ciftlik"
+    },
+    {
+      "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "name": "Anadolu Hasadı",
+      "slug": "anadolu-hasadi"
+    },
+    {
+      "id": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "name": "Doğal Pınar",
+      "slug": "dogal-pinar"
+    }
+  ],
+  "products": [
+    {
+      "id": "10000000-0000-0000-0000-000000000001",
+      "sku": "PRD-ELMA-01",
+      "name": "Amasya Elması 1 KG",
+      "slug": "amasya-elmasi-1-kg",
+      "categoryId": "11111111-1111-1111-1111-111111111111",
+      "brandId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "price": 35.00,
+      "vatRate": 1.00,
+      "netContent": 1.000,
+      "unitType": 3,
+      "initialStock": 100
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000002",
+      "sku": "PRD-DOMATES-01",
+      "name": "Salkım Domates 1 KG",
+      "slug": "salkim-domates-1-kg",
+      "categoryId": "11111111-1111-1111-1111-111111111111",
+      "brandId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "price": 42.50,
+      "vatRate": 1.00,
+      "netContent": 1.000,
+      "unitType": 3,
+      "initialStock": 150
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000003",
+      "sku": "PRD-SUT-01",
+      "name": "Tam Yağlı Süt 1 L",
+      "slug": "tam-yagli-sut-1-l",
+      "categoryId": "22222222-2222-2222-2222-222222222222",
+      "brandId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "price": 28.00,
+      "vatRate": 1.00,
+      "netContent": 1.000,
+      "unitType": 5,
+      "initialStock": 200
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000004",
+      "sku": "PRD-PEYNIR-01",
+      "name": "Klasik Beyaz Peynir 500G",
+      "slug": "klasik-beyaz-peynir-500g",
+      "categoryId": "22222222-2222-2222-2222-222222222222",
+      "brandId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "price": 120.00,
+      "vatRate": 1.00,
+      "netContent": 0.500,
+      "unitType": 3,
+      "initialStock": 80
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000005",
+      "sku": "PRD-YUMURTA-01",
+      "name": "Organik Yumurta 10'lu",
+      "slug": "organik-yumurta-10lu",
+      "categoryId": "22222222-2222-2222-2222-222222222222",
+      "brandId": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "price": 65.00,
+      "vatRate": 1.00,
+      "netContent": 10.000,
+      "unitType": 6,
+      "initialStock": 120
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000006",
+      "sku": "PRD-PIRINC-01",
+      "name": "Baldo Pirinç 1 KG",
+      "slug": "baldo-pirinc-1-kg",
+      "categoryId": "33333333-3333-3333-3333-333333333333",
+      "brandId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "price": 85.00,
+      "vatRate": 1.00,
+      "netContent": 1.000,
+      "unitType": 3,
+      "initialStock": 90
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000007",
+      "sku": "PRD-MAKARNA-01",
+      "name": "Spagetti Makarna 500G",
+      "slug": "spagetti-makarna-500g",
+      "categoryId": "33333333-3333-3333-3333-333333333333",
+      "brandId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "price": 18.50,
+      "vatRate": 1.00,
+      "netContent": 0.500,
+      "unitType": 6,
+      "initialStock": 250
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000008",
+      "sku": "PRD-ZEYTINYAGI-01",
+      "name": "Sızma Zeytinyağı 1 L",
+      "slug": "sizma-zeytinyagi-1-l",
+      "categoryId": "33333333-3333-3333-3333-333333333333",
+      "brandId": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      "price": 320.00,
+      "vatRate": 1.00,
+      "netContent": 1.000,
+      "unitType": 5,
+      "initialStock": 60
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000009",
+      "sku": "PRD-SU-01",
+      "name": "Doğal Kaynak Suyu 5 L",
+      "slug": "dogal-kaynak-suyu-5-l",
+      "categoryId": "44444444-4444-4444-4444-444444444444",
+      "brandId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "price": 25.00,
+      "vatRate": 1.00,
+      "netContent": 5.000,
+      "unitType": 5,
+      "initialStock": 300
+    },
+    {
+      "id": "10000000-0000-0000-0000-000000000010",
+      "sku": "PRD-PORTAKAL-SUYU-01",
+      "name": "Sıkma Portakal Suyu 1 L",
+      "slug": "sikma-portakal-suyu-1-l",
+      "categoryId": "44444444-4444-4444-4444-444444444444",
+      "brandId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "price": 45.00,
+      "vatRate": 10.00,
+      "netContent": 1.000,
+      "unitType": 5,
+      "initialStock": 110
+    }
+  ]
+}

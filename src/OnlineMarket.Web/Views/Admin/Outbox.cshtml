@@ -1,0 +1,74 @@
+@model List<OnlineMarket.Web.Domain.Entities.OutboxMessage>
+@{
+    ViewData["Title"] = "Outbox Olay Takip Paneli";
+}
+
+<div class="my-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h2 class="fw-bold mb-1"><i class="bi bi-send text-primary me-2"></i>Outbox Olay Takip Paneli</h2>
+            <p class="text-secondary small mb-0">Market veritabanından async servis iletimi bekleyen Outbox mesajları.</p>
+        </div>
+        <form asp-action="ProcessOutboxNow" method="post">
+            @Html.AntiForgeryToken()
+            <button type="submit" class="btn btn-success-custom rounded-pill">
+                <i class="bi bi-play-fill me-1"></i> Outbox Worker'ı Tetikle
+            </button>
+        </form>
+    </div>
+
+    <div class="card-custom p-4 border-0 shadow-sm rounded-4">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0" style="font-size: 0.875rem;">
+                <thead class="table-light">
+                    <tr>
+                        <th>ID</th>
+                        <th>Olay Tipi (EventType)</th>
+                        <th>Hedef Servis</th>
+                        <th>Aggregate ID</th>
+                        <th>Durum</th>
+                        <th>Deneme</th>
+                        <th>Oluşma Tarihi</th>
+                        <th>İşlenme Tarihi</th>
+                        <th>Son Hata</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var msg in Model)
+                    {
+                        <tr>
+                            <td class="fw-bold">#@msg.Id</td>
+                            <td><span class="badge bg-primary-subtle text-primary">@msg.EventType</span></td>
+                            <td><span class="badge bg-secondary-subtle text-secondary">@msg.Destination</span></td>
+                            <td class="text-secondary" style="font-family: monospace;">@msg.AggregateId.ToString().Substring(0, 8)...</td>
+                            <td>
+                                @switch (msg.Status)
+                                {
+                                    case OnlineMarket.Web.Domain.Enums.OutboxStatus.Pending:
+                                        <span class="status-pill status-pending">Pending</span>
+                                        break;
+                                    case OnlineMarket.Web.Domain.Enums.OutboxStatus.Processing:
+                                        <span class="status-pill status-processing">Processing</span>
+                                        break;
+                                    case OnlineMarket.Web.Domain.Enums.OutboxStatus.Processed:
+                                        <span class="status-pill status-completed">Processed</span>
+                                        break;
+                                    case OnlineMarket.Web.Domain.Enums.OutboxStatus.Retrying:
+                                        <span class="status-pill status-pending">Retrying</span>
+                                        break;
+                                    case OnlineMarket.Web.Domain.Enums.OutboxStatus.FailedPermanent:
+                                        <span class="status-pill status-failed">FailedPermanent</span>
+                                        break;
+                                }
+                            </td>
+                            <td class="fw-bold text-center">@msg.AttemptCount</td>
+                            <td class="text-secondary">@msg.OccurredAtUtc.ToLocalTime().ToString("g")</td>
+                            <td class="text-secondary">@(msg.ProcessedAtUtc.HasValue ? msg.ProcessedAtUtc.Value.ToLocalTime().ToString("g") : "-")</td>
+                            <td class="text-danger small text-truncate" style="max-width: 180px;" title="@msg.LastError">@(string.IsNullOrEmpty(msg.LastError) ? "-" : msg.LastError)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

@@ -100,6 +100,7 @@ It returns `202 Accepted` after the transaction commits.
 
 The worker executes one valid step at a time and records every attempt.
 
+
 ## HTTP and Retry
 
 Use:

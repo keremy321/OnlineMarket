@@ -1,0 +1,76 @@
+@model List<OnlineMarket.Web.Application.Models.CustomerAddressDto>
+@{
+    ViewData["Title"] = "Teslimat Adreslerim";
+}
+
+<div class="d-flex align-items-center justify-content-between my-4">
+    <div>
+        <h2 class="fw-bold mb-1">Teslimat Adreslerim</h2>
+        <p class="text-secondary small mb-0">Siparişleriniz için kayıtlı adreslerinizi yönetin.</p>
+    </div>
+    <a asp-action="Create" class="btn btn-primary-custom rounded-pill">
+        <i class="bi bi-plus-lg me-1"></i> Yeni Adres Ekle
+    </a>
+</div>
+
+@if (!Model.Any())
+{
+    <div class="card-custom p-5 text-center my-4">
+        <i class="bi bi-geo-alt display-3 text-secondary"></i>
+        <h4 class="fw-bold mt-3">Henüz Kayıtlı Adresiniz Yok</h4>
+        <p class="text-secondary">Sipariş verebilmek için lütfen en az bir teslimat adresi tanımlayın.</p>
+        <a asp-action="Create" class="btn btn-primary-custom rounded-pill mt-2">Adres Ekle</a>
+    </div>
+}
+else
+{
+    <div class="row g-4">
+        @foreach (var address in Model)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card-custom h-100 p-4 position-relative d-flex flex-column">
+                    @if (address.IsDefault)
+                    {
+                        <span class="position-absolute top-0 end-0 bg-success text-white px-3 py-1 rounded-bl-3 rounded-tr-3 small fw-bold" style="border-top-right-radius: var(--radius-md); border-bottom-left-radius: var(--radius-md);">
+                            <i class="bi bi-check-circle me-1"></i> Varsayılan
+                        </span>
+                    }
+
+                    <h5 class="fw-bold mb-2">@address.Title</h5>
+                    <p class="mb-1 text-primary fw-semibold"><i class="bi bi-person me-1"></i> @address.ContactName</p>
+                    <p class="mb-2 text-secondary small"><i class="bi bi-telephone me-1"></i> @address.PhoneNumber</p>
+                    
+                    <p class="text-dark small mb-3 flex-grow-1">
+                        @address.AddressLine1
+                        @if (!string.IsNullOrEmpty(address.AddressLine2))
+                        {
+                            <br />@address.AddressLine2
+                        }
+                        <br /><strong>@address.District / @address.City</strong>
+                    </p>
+
+                    <div class="d-flex align-items-center justify-content-between pt-3 border-top gap-2">
+                        @if (!address.IsDefault)
+                        {
+                            <form asp-action="SetDefault" asp-route-id="@address.Id" method="post" class="d-inline">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn btn-sm btn-outline-success rounded-pill">Varsayılan Yap</button>
+                            </form>
+                        }
+                        <div class="d-flex align-items-center gap-1 ms-auto">
+                            <a asp-action="Edit" asp-route-id="@address.Id" class="btn btn-sm btn-outline-secondary rounded-circle" title="Düzenle">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            <form asp-action="Delete" asp-route-id="@address.Id" method="post" class="d-inline" onsubmit="return confirm('Bu adresi silmek istediğinizden emin misiniz?');">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn btn-sm btn-outline-danger rounded-circle" title="Sil">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}

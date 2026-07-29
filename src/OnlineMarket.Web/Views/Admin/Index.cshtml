@@ -1,0 +1,84 @@
+@model OnlineMarket.Web.Models.AdminDashboardViewModel
+@{
+    ViewData["Title"] = "Admin Yönetim Paneli";
+}
+
+<div class="my-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h2 class="fw-bold mb-1"><i class="bi bi-speedometer2 text-primary me-2"></i>Admin Yönetim Paneli</h2>
+            <p class="text-secondary small mb-0">OnlineMarket ürün, stok, sipariş ve outbox olaylarını yönetin.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a asp-action="Products" class="btn btn-outline-primary rounded-pill">Ürünleri Yönet</a>
+            <a asp-action="Outbox" class="btn btn-primary-custom rounded-pill">Outbox Olay Takibi</a>
+        </div>
+    </div>
+
+    <!-- Stat Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card-custom p-4 border-0 shadow-sm rounded-4 text-center">
+                <i class="bi bi-box-seam display-5 text-primary mb-2"></i>
+                <h3 class="fw-bold mb-0">@Model.TotalProducts</h3>
+                <span class="text-secondary small">Toplam Ürün Sayısı</span>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card-custom p-4 border-0 shadow-sm rounded-4 text-center">
+                <i class="bi bi-exclamation-triangle display-5 text-warning mb-2"></i>
+                <h3 class="fw-bold mb-0 text-warning">@Model.OutOfStockProducts</h3>
+                <span class="text-secondary small">Stoku Tükenenler</span>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card-custom p-4 border-0 shadow-sm rounded-4 text-center">
+                <i class="bi bi-cart-check display-5 text-success mb-2"></i>
+                <h3 class="fw-bold mb-0">@Model.TotalOrders</h3>
+                <span class="text-secondary small">Toplam Sipariş</span>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card-custom p-4 border-0 shadow-sm rounded-4 text-center">
+                <i class="bi bi-send-check display-5 text-info mb-2"></i>
+                <h3 class="fw-bold mb-0 text-info">@Model.PendingOutboxMessages</h3>
+                <span class="text-secondary small">Bekleyen Outbox Mesajı</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Orders Table -->
+    <div class="card-custom p-4 border-0 shadow-sm rounded-4">
+        <h4 class="fw-bold mb-3">Son Siparişler</h4>
+        <div class="table-responsive">
+            <table class="table align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Sipariş No</th>
+                        <th>Tarih</th>
+                        <th>Tutar</th>
+                        <th>Durum</th>
+                        <th>İşlem</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var order in Model.RecentOrders)
+                    {
+                        <tr>
+                            <td class="fw-bold">#@order.OrderNumber</td>
+                            <td class="text-secondary small">@order.PlacedAtUtc.ToLocalTime().ToString("g")</td>
+                            <td class="fw-bold text-primary">@order.GrandTotal.ToString("N2") ₺</td>
+                            <td><span class="status-pill status-completed">Onaylandı</span></td>
+                            <td>
+                                <a asp-controller="Orders" asp-action="Details" asp-route-id="@order.Id" class="btn btn-sm btn-outline-secondary rounded-pill">İncele</a>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

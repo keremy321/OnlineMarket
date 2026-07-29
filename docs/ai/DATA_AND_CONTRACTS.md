@@ -120,6 +120,7 @@ Each `ProductId` may appear at most once in `Items`. The ERP Integration
 consumer rejects duplicate product lines during request validation; it does
 not merge or normalise them.
 
+
 ## Event Idempotency
 
 - Same `EventId` and same payload hash: successful replay.

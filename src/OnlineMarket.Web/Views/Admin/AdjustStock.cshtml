@@ -1,0 +1,38 @@
+@model OnlineMarket.Web.Models.StockAdjustViewModel
+@{
+    ViewData["Title"] = "Stok Hareketi İşle";
+}
+
+<div class="row justify-content-center my-4">
+    <div class="col-md-6">
+        <div class="card-custom p-4 shadow-sm border-0 rounded-4">
+            <h3 class="fw-bold mb-2"><i class="bi bi-box text-primary me-2"></i>Stok Düzeltme İşlemi</h3>
+            <p class="text-secondary small mb-4">Ürün: <strong>@Model.ProductName</strong> | Mevcut Stok: <span class="badge bg-primary fs-6">@Model.CurrentStock Adet</span></p>
+
+            <form asp-action="AdjustStock" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="ProductId" />
+                <input type="hidden" asp-for="ProductName" />
+                <input type="hidden" asp-for="CurrentStock" />
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                <div class="mb-3">
+                    <label asp-for="QuantityChange" class="form-label fw-semibold">Miktar Değişimi (+ veya -)</label>
+                    <input asp-for="QuantityChange" type="number" class="form-control rounded-3" placeholder="Örn: 50 (Giriş) veya -10 (Çıkış)" />
+                    <span asp-validation-for="QuantityChange" class="text-danger small"></span>
+                </div>
+
+                <div class="mb-4">
+                    <label asp-for="Reason" class="form-label fw-semibold">İşlem Nedeni / Açıklama</label>
+                    <input asp-for="Reason" class="form-control rounded-3" placeholder="Örn: Manuel Stok Sayımı, Tedarik Gelen İrsaliye" />
+                    <span asp-validation-for="Reason" class="text-danger small"></span>
+                </div>
+
+                <div class="d-flex align-items-center justify-content-between pt-3 border-top">
+                    <a asp-action="Products" class="btn btn-outline-secondary rounded-pill px-4">İptal</a>
+                    <button type="submit" class="btn btn-primary-custom rounded-pill px-4">Stok Hareketini Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

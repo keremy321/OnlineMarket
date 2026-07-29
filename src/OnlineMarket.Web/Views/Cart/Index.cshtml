@@ -1,0 +1,156 @@
+@model OnlineMarket.Web.Models.CartIndexViewModel
+@{
+    ViewData["Title"] = "Alışveriş Sepetim";
+}
+
+<div class="my-4">
+    <div class="d-flex align-items-center justify-content-between mb-4">
+        <div>
+            <h2 class="fw-bold mb-1"><i class="bi bi-cart3 text-primary me-2"></i>Alışveriş Sepetim</h2>
+            <p class="text-secondary small mb-0">Sepetinizdeki ürünleri inceleyin ve siparişinizi tamamlayın.</p>
+        </div>
+        @if (Model.Cart.Items.Any())
+        {
+            <form asp-action="ClearCart" method="post">
+                @Html.AntiForgeryToken()
+                <button type="submit" class="btn btn-sm btn-outline-danger rounded-pill px-3" onclick="return confirm('Sepetinizi temizlemek istediğinizden emin misiniz?');">
+                    <i class="bi bi-trash me-1"></i> Sepeti Temizle
+                </button>
+            </form>
+        }
+    </div>
+
+    @if (!Model.Cart.Items.Any())
+    {
+        <div class="card-custom p-5 text-center my-4">
+            <i class="bi bi-cart-x display-1 text-secondary mb-3"></i>
+            <h3 class="fw-bold">Sepetiniz Boş</h3>
+            <p class="text-secondary">Alışverişe devam etmek için harika ürünlerimizi keşfedin!</p>
+            <a asp-controller="Catalog" asp-action="Index" class="btn btn-primary-custom rounded-pill mt-2 px-4">Alışverişe Başla</a>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <!-- Cart Items Table -->
+            <div class="col-lg-8">
+                <div class="card-custom p-3 border-0 shadow-sm rounded-4">
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Ürün</th>
+                                    <th class="text-center">Birim Fiyat</th>
+                                    <th class="text-center" style="width: 130px;">Adet</th>
+                                    <th class="text-end">Ara Toplam</th>
+                                    <th class="text-center" style="width: 50px;"></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in Model.Cart.Items)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="d-flex align-items-center gap-3">
+                                                <img src="@(string.IsNullOrEmpty(item.ImageUrl) ? "https://placehold.co/60x60?text=Urun" : item.ImageUrl)" class="rounded" style="width: 50px; height: 50px; object-fit: contain;" />
+                                                <div>
+                                                    <h6 class="fw-bold text-dark mb-0">@item.ProductName</h6>
+                                                    <span class="text-secondary small">SKU: @item.ProductSku</span>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="text-center">
+                                            <span class="fw-semibold">@item.UnitPrice.ToString("N2") ₺</span>
+                                            <span class="d-block vat-info">+%@item.VatRate KDV</span>
+                                        </td>
+                                        <td class="text-center">
+                                            <form asp-action="UpdateQuantity" method="post" class="d-flex align-items-center gap-1">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="cartItemId" value="@item.Id" />
+                                                <input type="number" name="quantity" value="@item.Quantity" min="1" max="@item.AvailableStock" class="form-control form-control-sm text-center rounded-3" onchange="this.form.submit()" />
+                                            </form>
+                                        </td>
+                                        <td class="text-end">
+                                            <span class="fw-bold text-primary">@item.LineTotal.ToString("N2") ₺</span>
+                                            <span class="d-block vat-info">(KDV: @item.LineVat.ToString("N2") ₺)</span>
+                                        </td>
+                                        <td class="text-center">
+                                            <form asp-action="RemoveItem" method="post">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="cartItemId" value="@item.Id" />
+                                                <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Kaldır">
+                                                    <i class="bi bi-x-circle fs-5"></i>
+                                                </button>
+                                            </form>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cart Summary Card -->
+            <div class="col-lg-4">
+                <div class="card-custom p-4 border-0 shadow-sm rounded-4 sticky-top" style="top: 90px;">
+                    <h4 class="fw-bold mb-3">Sipariş Özeti</h4>
+                    
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-secondary">Ara Toplam (KDV Hariç)</span>
+                        <span class="fw-semibold">@Model.Cart.Subtotal.ToString("N2") ₺</span>
+                    </div>
+
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-secondary">KDV Toplamı</span>
+                        <span class="fw-semibold">@Model.Cart.VatTotal.ToString("N2") ₺</span>
+                    </div>
+
+                    <hr />
+
+                    <div class="d-flex justify-content-between mb-4">
+                        <span class="fw-bold fs-5">Genel Toplam</span>
+                        <span class="price-tag fs-4">@Model.Cart.GrandTotal.ToString("N2") ₺</span>
+                    </div>
+
+                    <a asp-controller="Checkout" asp-action="Index" class="btn btn-success-custom w-100 py-3 rounded-pill fs-5">
+                        <i class="bi bi-credit-card me-2"></i> Ödemeye Geç
+                    </a>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- Cart Completion Recommendations -->
+    @if (Model.CartCompletionRecommendations.Any())
+    {
+        <div class="my-5">
+            <div class="d-flex align-items-center mb-3">
+                <span class="badge-recommendation badge-cart me-2"><i class="bi bi-cart-check-fill"></i> Sepetinizi Tamamlayın</span>
+                <h4 class="fw-bold mb-0">Sepetinize Yakışacak Öneriler</h4>
+            </div>
+            <div class="row g-3">
+                @foreach (var rec in Model.CartCompletionRecommendations)
+                {
+                    if (rec.ProductDetails != null)
+                    {
+                        <div class="col-6 col-md-3">
+                            <div class="card-custom p-3 text-center border-0 shadow-sm">
+                                <img src="@(string.IsNullOrEmpty(rec.ProductDetails.ImageUrl) ? "https://placehold.co/150x150?text=Urun" : rec.ProductDetails.ImageUrl)" class="img-fluid rounded mb-2" style="max-height: 100px; object-fit: contain;" />
+                                <h6 class="fw-bold text-truncate mb-1">
+                                    <a asp-controller="Catalog" asp-action="Details" asp-route-id="@rec.ProductDetails.Id" class="text-dark text-decoration-none">@rec.ProductDetails.Name</a>
+                                </h6>
+                                <div class="price-tag fs-6 mb-2">@rec.ProductDetails.Price.ToString("N2") ₺</div>
+                                <form asp-action="AddToCart" method="post">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="productId" value="@rec.ProductDetails.Id" />
+                                    <button type="submit" class="btn btn-sm btn-outline-primary w-100 rounded-pill"><i class="bi bi-cart-plus me-1"></i> Sepete Ekle</button>
+                                </form>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+</div>

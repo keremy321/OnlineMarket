@@ -1,0 +1,119 @@
+@model OnlineMarket.Web.Models.CheckoutIndexViewModel
+@{
+    ViewData["Title"] = "Siparişi Tamamla";
+}
+
+<div class="my-4">
+    <h2 class="fw-bold mb-1"><i class="bi bi-shield-check text-success me-2"></i>Siparişi Tamamla</h2>
+    <p class="text-secondary small mb-4">Teslimat adresinizi seçin ve ödeme simülasyonunu tamamlayın.</p>
+
+    @if (!string.IsNullOrEmpty(Model.ErrorMessage))
+    {
+        <div class="alert alert-danger rounded-3 mb-4">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i> @Model.ErrorMessage
+        </div>
+    }
+
+    <form asp-action="ProcessCheckout" method="post">
+        @Html.AntiForgeryToken()
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <!-- 1. Delivery Address Selection -->
+                <div class="card-custom p-4 border-0 shadow-sm rounded-4 mb-4">
+                    <div class="d-flex align-items-center justify-content-between mb-3">
+                        <h4 class="fw-bold mb-0"><i class="bi bi-geo-alt text-primary me-2"></i>1. Teslimat Adresi Seçimi</h4>
+                        <a asp-controller="Address" asp-action="Create" class="btn btn-sm btn-outline-primary rounded-pill">Yeni Adres Ekle</a>
+                    </div>
+
+                    <div class="row g-3">
+                        @foreach (var address in Model.Addresses)
+                        {
+                            <div class="col-md-6">
+                                <div class="card p-3 rounded-3 border @(Model.SelectedAddressId == address.Id ? "border-primary bg-light" : "")">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="SelectedAddressId" id="addr_@address.Id" value="@address.Id" checked="@(Model.SelectedAddressId == address.Id)" />
+                                        <label class="form-check-label w-100" for="addr_@address.Id">
+                                            <strong class="d-block text-dark mb-1">@address.Title</strong>
+                                            <span class="d-block text-primary small fw-semibold">@address.ContactName (@address.PhoneNumber)</span>
+                                            <span class="d-block text-secondary small">@address.AddressLine1, @address.District / @address.City</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <!-- 2. Payment Simulation (Non-sensitive) -->
+                <div class="card-custom p-4 border-0 shadow-sm rounded-4">
+                    <h4 class="fw-bold mb-3"><i class="bi bi-credit-card text-success me-2"></i>2. Ödeme Simülasyonu</h4>
+                    
+                    <div class="alert alert-info rounded-3 mb-3">
+                        <i class="bi bi-info-circle-fill me-2"></i> <strong>Test Ortamı:</strong> Gerçek kart bilgisi toplanmamaktadır. İşlem güvenli ödeme simülasyonu ile gerçekleşmektedir.
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Kart Sahibi Ad Soyad</label>
+                        <input type="text" asp-for="CardHolderName" class="form-control rounded-3" readonly />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Kart Numarası</label>
+                        <input type="text" asp-for="CardNumberMasked" class="form-control rounded-3" readonly />
+                    </div>
+
+                    <div class="p-3 bg-light rounded-3 mb-2">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" role="switch" id="simulateSuccess" asp-for="SimulateSuccess" />
+                            <label class="form-check-label fw-bold text-success" for="simulateSuccess">
+                                Simülasyon Sonucu: Başarılı Ödeme
+                            </label>
+                        </div>
+                        <span class="text-secondary small d-block ms-4">İşaret kalırsa ödeme başarıyla tamamlanır. İşaret kaldırılırsa ödeme reddi simüle edilir.</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Order Summary Sidebar -->
+            <div class="col-lg-4">
+                <div class="card-custom p-4 border-0 shadow-sm rounded-4 sticky-top" style="top: 90px;">
+                    <h4 class="fw-bold mb-3">Sipariş Özeti</h4>
+
+                    <div class="mb-3 max-vh-50 overflow-auto">
+                        @foreach (var item in Model.Cart.Items)
+                        {
+                            <div class="d-flex justify-content-between align-items-center mb-2 pb-2 border-bottom">
+                                <div>
+                                    <span class="fw-semibold d-block text-truncate" style="max-width: 180px;">@item.ProductName</span>
+                                    <span class="text-secondary small">@item.Quantity Adet x @item.UnitPrice.ToString("N2") ₺</span>
+                                </div>
+                                <span class="fw-bold text-primary">@item.LineTotal.ToString("N2") ₺</span>
+                            </div>
+                        }
+                    </div>
+
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-secondary">Ara Toplam</span>
+                        <span class="fw-semibold">@Model.Cart.Subtotal.ToString("N2") ₺</span>
+                    </div>
+
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-secondary">KDV Toplamı</span>
+                        <span class="fw-semibold">@Model.Cart.VatTotal.ToString("N2") ₺</span>
+                    </div>
+
+                    <hr />
+
+                    <div class="d-flex justify-content-between mb-4">
+                        <span class="fw-bold fs-5">Genel Toplam</span>
+                        <span class="price-tag fs-4">@Model.Cart.GrandTotal.ToString("N2") ₺</span>
+                    </div>
+
+                    <button type="submit" class="btn btn-success-custom w-100 py-3 rounded-pill fs-5">
+                        <i class="bi bi-check-circle me-2"></i> Siparişi Onayla
+                    </button>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>

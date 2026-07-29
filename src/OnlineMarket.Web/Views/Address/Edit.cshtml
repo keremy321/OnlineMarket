@@ -1,0 +1,79 @@
+@model OnlineMarket.Web.Models.AddressFormViewModel
+@{
+    ViewData["Title"] = "Adresi Düzenle";
+}
+
+<div class="row justify-content-center my-4">
+    <div class="col-md-8 col-lg-6">
+        <div class="card-custom p-4 shadow-sm border-0">
+            <h3 class="fw-bold mb-3"><i class="bi bi-pencil-square text-primary me-2"></i>Adresi Düzenle</h3>
+            <p class="text-secondary small mb-4">Adres bilgilerinizi güncelleyebilirsiniz.</p>
+
+            <form asp-action="Edit" asp-route-id="@Model.Id" method="post">
+                @Html.AntiForgeryToken()
+                <input type="hidden" asp-for="Id" />
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+                <div class="mb-3">
+                    <label asp-for="Title" class="form-label fw-semibold">Adres Başlığı</label>
+                    <input asp-for="Title" class="form-control rounded-3" />
+                    <span asp-validation-for="Title" class="text-danger small"></span>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="ContactName" class="form-label fw-semibold">Teslim Alacak Kişi</label>
+                        <input asp-for="ContactName" class="form-control rounded-3" />
+                        <span asp-validation-for="ContactName" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label asp-for="PhoneNumber" class="form-label fw-semibold">Telefon Numarası</label>
+                        <input asp-for="PhoneNumber" class="form-control rounded-3" />
+                        <span asp-validation-for="PhoneNumber" class="text-danger small"></span>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="AddressLine1" class="form-label fw-semibold">Adres Satırı 1</label>
+                    <textarea asp-for="AddressLine1" class="form-control rounded-3" rows="2"></textarea>
+                    <span asp-validation-for="AddressLine1" class="text-danger small"></span>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="AddressLine2" class="form-label fw-semibold">Adres Satırı 2 (İsteğe Bağlı)</label>
+                    <input asp-for="AddressLine2" class="form-control rounded-3" />
+                </div>
+
+                <div class="row">
+                    <div class="col-md-5 mb-3">
+                        <label asp-for="District" class="form-label fw-semibold">İlçe</label>
+                        <input asp-for="District" class="form-control rounded-3" />
+                        <span asp-validation-for="District" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-md-5 mb-3">
+                        <label asp-for="City" class="form-label fw-semibold">İl</label>
+                        <input asp-for="City" class="form-control rounded-3" />
+                        <span asp-validation-for="City" class="text-danger small"></span>
+                    </div>
+
+                    <div class="col-md-2 mb-3">
+                        <label asp-for="PostalCode" class="form-label fw-semibold">Posta Kodu</label>
+                        <input asp-for="PostalCode" class="form-control rounded-3" />
+                    </div>
+                </div>
+
+                <div class="form-check mb-4">
+                    <input asp-for="IsDefault" class="form-check-input" />
+                    <label asp-for="IsDefault" class="form-check-label text-secondary">Varsayılan adres yap</label>
+                </div>
+
+                <div class="d-flex align-items-center justify-content-between pt-3 border-top">
+                    <a asp-action="Index" class="btn btn-outline-secondary rounded-pill px-4">İptal</a>
+                    <button type="submit" class="btn btn-primary-custom rounded-pill px-4">Değişiklikleri Kaydet</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
