@@ -163,10 +163,9 @@ variable and verifies that it names the expected database on `127.0.0.1` or
 `localhost`. This prevents the existing Web LocalDB fallback or a remote server
 from being selected implicitly.
 
-The current branch has implemented contexts and migrations for
-`OnlineMarketDb`, `RecommendationDb`, and `IntegrationDb`. Until its database
-foundation phase lands, `MockErpDb` is expected to be classified as
-`ContextMissing` and skipped.
+The current branch has implemented contexts and migrations for all four
+application databases. `OnlineMarketDb`, `RecommendationDb`, `IntegrationDb`,
+and `MockErpDb` are expected to be classified as `Ready`.
 
 ## Generate idempotent SQL
 
