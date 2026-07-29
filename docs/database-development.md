@@ -164,8 +164,8 @@ variable and verifies that it names the expected database on `127.0.0.1` or
 from being selected implicitly.
 
 The current branch has implemented contexts and migrations for
-`OnlineMarketDb` and `RecommendationDb`. Until their database foundation
-phases land, `IntegrationDb` and `MockErpDb` are expected to be classified as
+`OnlineMarketDb`, `RecommendationDb`, and `IntegrationDb`. Until its database
+foundation phase lands, `MockErpDb` is expected to be classified as
 `ContextMissing` and skipped.
 
 ## Generate idempotent SQL
