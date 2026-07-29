@@ -40,7 +40,9 @@ The completed database foundation must contain:
 - database creation and migration scripts,
 - unit tests for pure invariants,
 - SQL Server integration tests for constraints, transactions, filtered indexes, concurrency, idempotency, and worker claims,
-- updated DBML and database documentation.
+- updated DBML and database documentation,
+- ERP field-to-model parity for payment method, order address, stock card, and
+  accounting voucher lines.
 
 ### 1.2 Explicitly forbidden changes
 
@@ -69,7 +71,7 @@ Do not:
 | `OnlineMarketDb` | `OnlineMarket.Web` | `OnlineMarketDbContext` | Identity, customer profile, addresses, catalogue, market stock, cart, checkout, orders, payment simulation, outbox |
 | `RecommendationDb` | `Recommendation.Api` | `RecommendationDbContext` | Product/order snapshots, processed events, recommendation calculations, run audit |
 | `IntegrationDb` | `ErpIntegration.Api` | `IntegrationDbContext` | Durable ERP order snapshot, batches, ordered steps, attempts, retries, customer-to-ERP link |
-| `MockErpDb` | `MockErp.Api` | `MockErpDbContext` | Simulated ERP customer, order, stock, accounting, idempotency |
+| `MockErpDb` | `MockErp.Api` | `MockErpDbContext` | Simulated ERP customer, order/address, stock card/movement, accounting header/lines, idempotency |
 
 ### 2.1 Ownership rules
 
@@ -213,6 +215,16 @@ The database stores the calculated snapshots and enforces internal equality wher
 | `IntegrationStepType` | `1=EnsureCustomer`, `2=CreateOrder`, `3=CreateStockMovement`, `4=CreateAccountingEntry` |
 | `IntegrationStepStatus` | `1=Pending`, `2=InProgress`, `3=Retrying`, `4=Succeeded`, `5=FailedPermanent`, `6=WaitingManualRetry` |
 | `IntegrationResultType` | `1=Succeeded`, `2=TransientFailure`, `3=PermanentFailure`, `4=IdempotentReplay` |
+
+### 4.4 Mock ERP enums
+
+| Enum | Numeric values |
+|---|---|
+| `AccountingVoucherType` | `1=SalesInvoice` |
+
+Mock ERP defines its own local `PaymentMethod` enum with the same numeric
+values as the `OrderReadyForErpV1` contract. Do not add a production project
+reference to reuse the Online Market enum.
 
 Do not reorder or renumber released enum values.
 
@@ -1262,6 +1274,7 @@ Complete customer, selected address, order time, and total snapshot required for
 | `PostalCode` | `nvarchar(20)` | Yes | — |  |
 | `CountryCode` | `char(2)` | No | — |  |
 | `OrderPlacedAtUtc` | `datetime2(3)` | No | — |  |
+| `PaymentMethod` | `tinyint` | No | — | Non-sensitive `PaymentMethod` enum snapshot |
 | `Subtotal` | `decimal(18,2)` | No | — | >= 0 |
 | `VatTotal` | `decimal(18,2)` | No | — | >= 0 |
 | `GrandTotal` | `decimal(18,2)` | No | — | Subtotal + VatTotal |
@@ -1279,7 +1292,9 @@ Complete customer, selected address, order time, and total snapshot required for
 **Behavioural rules**
 
 - Must contain enough data for all retries when Online Market is offline.
-- Must not contain passwords, identity documents, card data, or provider tokens.
+- `PaymentMethod` is part of the deterministic event payload and payload hash.
+- Must not contain passwords, identity documents, card number, CVV, expiry
+  date, payment tokens, or provider credentials.
 
 
 ### `IntegrationOrderLines`
@@ -1452,16 +1467,24 @@ Integration-owned mapping between a market customer and an ERP customer code.
 
 ## 8.1 Responsibility
 
-`MockErpDb` simulates ERP customer, order, stock, accounting, history, and POST idempotency. It does not access market or integration databases and does not claim to model a real Uyumsoft schema.
+`MockErpDb` simulates ERP customer/current-account cards, ERP orders and
+delivery snapshots, stock cards and movements, sales accounting vouchers,
+order history, and POST idempotency. It does not access market or integration
+databases and does not claim to model a real Uyumsoft or legal accounting
+schema.
 
 ## 8.2 Relationship map
 
 ```mermaid
 erDiagram
     ErpCustomers ||--o{ ErpOrders : places
+    ErpOrders ||--|| ErpOrderAddresses : delivers_to
     ErpOrders ||--o{ ErpOrderLines : contains
     ErpOrders ||--o{ ErpStockMovements : creates
+    ErpCustomers ||--o{ ErpAccountingEntries : referenced_by
     ErpOrders ||--o| ErpAccountingEntries : posts
+    ErpAccountingEntries ||--o{ ErpAccountingEntryLines : contains
+    ErpCustomers ||--o{ ErpAccountingEntryLines : customer_line
     ErpStocks ||--o{ ErpStockMovements : logical_product_link
 ```
 
@@ -1513,6 +1536,7 @@ Simulated ERP order header created from an integration snapshot.
 | `MarketOrderNumber` | `nvarchar(32)` | No | — | Unique |
 | `ErpCustomerId` | `uniqueidentifier` | No | — | FK to ErpCustomers |
 | `OrderPlacedAtUtc` | `datetime2(3)` | No | — | Market order time |
+| `PaymentMethod` | `tinyint` | No | — | Non-sensitive payment-method snapshot |
 | `Subtotal` | `decimal(18,2)` | No | — | >= 0 |
 | `VatTotal` | `decimal(18,2)` | No | — | >= 0 |
 | `GrandTotal` | `decimal(18,2)` | No | — | Subtotal + VatTotal |
@@ -1534,6 +1558,41 @@ Simulated ERP order header created from an integration snapshot.
 
 - `CK_ErpOrders_Totals_NonNegative`
 - `CK_ErpOrders_GrandTotal`
+
+
+**Behavioural rules**
+
+- Order creation persists the header, lines, payment method, delivery-address
+  snapshot, and idempotency record atomically.
+- V1 creates a completed sales document. Draft/approval/cancellation workflow
+  and dispatch notes are deliberately out of scope.
+
+
+### `ErpOrderAddresses`
+
+Immutable delivery-address snapshot stored with the ERP order.
+
+| Column | SQL Server type | Nullable | Default | Key / rule |
+|---|---|---:|---|---|
+| `ErpOrderId` | `uniqueidentifier` | No | — | Primary key and FK to `ErpOrders.Id` |
+| `RecipientName` | `nvarchar(200)` | No | — | Required |
+| `PhoneNumber` | `nvarchar(30)` | No | — | Required snapshot |
+| `AddressLine1` | `nvarchar(250)` | No | — | Required |
+| `AddressLine2` | `nvarchar(250)` | Yes | — |  |
+| `District` | `nvarchar(100)` | No | — | Required |
+| `City` | `nvarchar(100)` | No | — | Required |
+| `PostalCode` | `nvarchar(20)` | Yes | — |  |
+| `CountryCode` | `char(2)` | No | `TR` |  |
+
+**Relationships and delete behaviour**
+
+- `ErpOrderId -> ErpOrders.Id`; one-to-one; `DeleteBehavior.NoAction`.
+
+**Behavioural rules**
+
+- There is no FK to an Online Market or Integration address table.
+- Later ERP customer-address updates must not change historical order delivery
+  data.
 
 
 ### `ErpOrderLines`
@@ -1581,7 +1640,10 @@ Independent simulated ERP stock balance initialised from the neutral catalogue s
 | `ExternalProductId` | `uniqueidentifier` | No | — | Unique market Product ID |
 | `Sku` | `nvarchar(64)` | No | — | Unique |
 | `ProductName` | `nvarchar(200)` | No | — |  |
+| `UnitType` | `tinyint` | No | — | Contract-compatible unit enum |
+| `NetContent` | `decimal(12,3)` | No | — | > 0 |
 | `Quantity` | `int` | No | — | >= 0 |
+| `ReorderLevel` | `int` | No | `0` | >= 0 critical-stock threshold |
 | `UpdatedAtUtc` | `datetime2(3)` | No | — |  |
 | `RowVersion` | `rowversion` | No | — | Concurrency token |
 
@@ -1594,11 +1656,16 @@ Independent simulated ERP stock balance initialised from the neutral catalogue s
 **Check constraints**
 
 - `CK_ErpStocks_Quantity_NonNegative`
+- `CK_ErpStocks_ReorderLevel_NonNegative`
+- `CK_ErpStocks_NetContent_Positive`
 
 **Behavioural rules**
 
 - Decrease with an atomic conditional SQL update.
 - This balance is separate from market stock.
+- `ReorderLevel` supports low-stock reporting; it does not create a warehouse
+  or location model.
+- V1 assumes one warehouse.
 - Insufficient ERP stock may be used as a controlled Development failure scenario.
 
 
@@ -1638,38 +1705,107 @@ One simulated ERP stock movement per market order and product.
 
 ### `ErpAccountingEntries`
 
-One simplified balanced accounting voucher per ERP/market order.
+One sales accounting-voucher header per ERP/market order.
 
 | Column | SQL Server type | Nullable | Default | Key / rule |
 |---|---|---:|---|---|
 | `Id` | `uniqueidentifier` | No | — | Primary key |
 | `ErpVoucherNumber` | `nvarchar(50)` | No | — | Unique |
-| `ErpOrderId` | `uniqueidentifier` | No | — | FK to ErpOrders, unique |
+| `VoucherType` | `tinyint` | No | `1` | `AccountingVoucherType.SalesInvoice` |
+| `ErpOrderId` | `uniqueidentifier` | No | — | FK to `ErpOrders.Id`, unique |
 | `ExternalOrderId` | `uniqueidentifier` | No | — | Market Order ID, unique |
-| `DebitAmount` | `decimal(18,2)` | No | — | >= 0 |
-| `CreditAmount` | `decimal(18,2)` | No | — | >= 0 |
+| `ErpCustomerId` | `uniqueidentifier` | No | — | Direct FK to `ErpCustomers.Id` |
+| `PaymentMethod` | `tinyint` | No | — | Non-sensitive payment-method snapshot |
+| `EntryDateUtc` | `datetime2(3)` | No | — | Accounting-entry date |
+| `TotalDebit` | `decimal(18,2)` | No | — | Sum of debit lines; >= 0 |
+| `TotalCredit` | `decimal(18,2)` | No | — | Sum of credit lines; >= 0 |
 | `Currency` | `char(3)` | No | — |  |
-| `Description` | `nvarchar(500)` | No | — |  |
-| `CreatedAtUtc` | `datetime2(3)` | No | — |  |
+| `Description` | `nvarchar(500)` | No | — | Required sales-voucher description |
+| `CreatedAtUtc` | `datetime2(3)` | No | — | Persistence time |
 
 **Relationships and delete behaviour**
 
 - `ErpOrderId -> ErpOrders.Id`; one-to-one; `DeleteBehavior.NoAction`.
+- `ErpCustomerId -> ErpCustomers.Id`; `DeleteBehavior.NoAction`.
 
 **Indexes**
 
 - `UX_ErpAccountingEntries_ErpVoucherNumber`
 - `UX_ErpAccountingEntries_ErpOrderId`
 - `UX_ErpAccountingEntries_ExternalOrderId`
+- `IX_ErpAccountingEntries_ErpCustomerId_EntryDateUtc`
 
 **Check constraints**
 
 - `CK_ErpAccountingEntries_Amounts_NonNegative`
-- `CK_ErpAccountingEntries_Balanced: `[DebitAmount] = [CreditAmount]``
+- `CK_ErpAccountingEntries_Balanced: `[TotalDebit] = [TotalCredit]``
 
 **Behavioural rules**
 
-- This is a project simulation, not a complete general-ledger schema.
+- The direct customer FK avoids requiring an indirect order join for
+  customer-based accounting history.
+- Header totals must equal the sums of child lines.
+- This is a project simulation, not a complete or legally compliant ledger.
+
+
+### `ErpAccountingEntryLines`
+
+Account-coded debit/credit lines belonging to an ERP accounting voucher.
+
+| Column | SQL Server type | Nullable | Default | Key / rule |
+|---|---|---:|---|---|
+| `Id` | `uniqueidentifier` | No | — | Primary key |
+| `AccountingEntryId` | `uniqueidentifier` | No | — | FK to `ErpAccountingEntries.Id` |
+| `SequenceNumber` | `tinyint` | No | — | 1..3 in V1 |
+| `AccountCode` | `nvarchar(20)` | No | — | `120`, `600`, or `391` in V1 |
+| `AccountName` | `nvarchar(150)` | No | — | Required display name |
+| `ErpCustomerId` | `uniqueidentifier` | Yes | — | Direct customer FK on account `120` line |
+| `DebitAmount` | `decimal(18,2)` | No | `0` | >= 0 |
+| `CreditAmount` | `decimal(18,2)` | No | `0` | >= 0 |
+| `Description` | `nvarchar(500)` | No | — | Required line description |
+| `CreatedAtUtc` | `datetime2(3)` | No | — |  |
+
+**Relationships and delete behaviour**
+
+- `AccountingEntryId -> ErpAccountingEntries.Id`; `DeleteBehavior.NoAction`.
+- `ErpCustomerId -> ErpCustomers.Id`; optional; `DeleteBehavior.NoAction`.
+
+**Indexes**
+
+- `UX_ErpAccountingEntryLines_Entry_Sequence on (AccountingEntryId, SequenceNumber)`
+- `UX_ErpAccountingEntryLines_Entry_Account on (AccountingEntryId, AccountCode)`
+- `IX_ErpAccountingEntryLines_AccountCode_CreatedAtUtc`
+- `IX_ErpAccountingEntryLines_ErpCustomerId_CreatedAtUtc`, filtered:
+  `[ErpCustomerId] IS NOT NULL`
+
+**Check constraints**
+
+- `CK_ErpAccountingEntryLines_Sequence_Range: `[SequenceNumber] BETWEEN 1 AND 3``
+- `CK_ErpAccountingEntryLines_Amounts_NonNegative`
+- `CK_ErpAccountingEntryLines_OneSided: exactly one of DebitAmount or CreditAmount is positive`
+- `CK_ErpAccountingEntryLines_AccountCode_V1: `[AccountCode] IN ('120','600','391')``
+
+**Behavioural rules**
+
+Create exactly these three V1 lines:
+
+1. Sequence 1, account `120` (`Customers/Receivables`):
+   `DebitAmount = GrandTotal`, `CreditAmount = 0`,
+   `ErpCustomerId` is required.
+2. Sequence 2, account `600` (`Domestic Sales`):
+   `DebitAmount = 0`, `CreditAmount = Subtotal`,
+   `ErpCustomerId` is null.
+3. Sequence 3, account `391` (`VAT Payable`):
+   `DebitAmount = 0`, `CreditAmount = VatTotal`,
+   `ErpCustomerId` is null.
+
+The accounting-entry application service must verify:
+
+```text
+TotalDebit  = Sum(lines.DebitAmount)
+TotalCredit = Sum(lines.CreditAmount)
+TotalDebit  = TotalCredit
+```
 
 
 ### `ErpIdempotencyRecords`
@@ -1849,8 +1985,12 @@ One transaction:
 2. If same key/hash exists, return stored result.
 3. If same key/different hash exists, return conflict with no business write.
 4. For a new request, create/update the ERP business resource.
-5. Insert ErpIdempotencyRecord.
-6. Commit.
+5. For CreateOrder, persist the order header, lines, delivery-address
+   snapshot, and payment method together.
+6. For CreateAccountingEntry, persist the voucher header and all three
+   account-coded lines together.
+7. Insert ErpIdempotencyRecord.
+8. Commit.
 
 ---
 
@@ -1910,6 +2050,7 @@ CorrelationId
 OrderId
 OrderNumber
 OrderPlacedAtUtc
+PaymentMethod
 Customer { CustomerId, FirstName, LastName, Email }
 Address {
   RecipientName, PhoneNumber, AddressLine1, AddressLine2?,
@@ -1922,7 +2063,10 @@ Items[] {
 }
 ```
 
-The Integration snapshot must be sufficient for retries without another market call.
+The Integration snapshot must be sufficient for retries without another market
+call. `PaymentMethod` is non-sensitive and uses the documented numeric enum
+values. Never include card number, CVV, expiry date, payment token, or provider
+credentials.
 
 ---
 
@@ -1953,9 +2097,12 @@ SQL Server must guarantee:
 - one attempt number per step,
 - one Mock ERP customer per market customer,
 - one Mock ERP order per market order,
+- one immutable delivery-address snapshot per Mock ERP order,
 - one stock movement per market order/product,
 - one accounting entry per order,
-- balanced debit and credit,
+- exactly one accounting line per V1 account code (`120`, `600`, `391`),
+- direct ERP customer reference on the voucher and account `120` line,
+- balanced accounting header and line debit/credit totals,
 - one stored result per idempotency key.
 
 ---
@@ -2129,8 +2276,10 @@ Seed:
 
 Seed:
 
-- ErpStocks with the same Product IDs and SKUs,
-- independent initial ERP quantities.
+- ErpStocks with the same Product IDs, SKUs, product names, unit types, and
+  net-content values,
+- independent initial ERP quantities,
+- deterministic non-negative reorder levels.
 
 Do not directly seed Recommendation or Integration business tables. They are populated through events.
 
@@ -2311,13 +2460,21 @@ Required:
 
 - same ExternalCustomerId creates one customer,
 - same ExternalOrderId creates one order,
+- ERP order stores payment method,
+- ERP order stores one immutable delivery-address snapshot,
+- ERP stock stores unit type, net content, and reorder level,
 - same order/product creates one stock movement,
 - one accounting entry per order,
-- ERP stock cannot become negative,
+- accounting entry has a direct ErpCustomerId,
+- accounting entry creates exactly accounts 120, 600, and 391,
+- account 120 line has the direct customer reference,
+- header totals equal line sums,
 - debit equals credit,
+- ERP stock cannot become negative,
 - same idempotency key/hash returns stored response,
 - same idempotency key/different hash returns conflict,
-- business write and idempotency result are atomic.
+- order/address/lines/idempotency are atomic,
+- accounting header/lines/idempotency are atomic.
 
 ---
 
@@ -2447,6 +2604,9 @@ A database foundation PR cannot be merged until all items are true:
 - [ ] All timestamps use datetime2(3) UTC semantics.
 - [ ] Snapshot tables preserve history.
 - [ ] Market and ERP stock balances are separate.
+- [ ] ERP order stores payment method and an immutable delivery address.
+- [ ] ERP stock stores unit type, net content, and reorder level.
+- [ ] ERP accounting has direct customer references and accounts 120/600/391.
 - [ ] Checkout atomicity is integration-tested.
 - [ ] Outbox and worker claims are concurrency-tested.
 - [ ] Recommendation event ordering/idempotency is tested.

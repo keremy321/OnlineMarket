@@ -13,7 +13,7 @@ The system must keep the market usable when Recommendation or ERP services are u
 | `OnlineMarket.Web` | Identity, customer addresses, catalogue, market stock, cart, checkout, orders, payment simulation, MVC and Admin UI, outbox |
 | `Recommendation.Api` | Product and order snapshots, five recommendation algorithms, recommendation queries, recalculation |
 | `ErpIntegration.Api` | Durable ERP event intake, ordered steps, retry, attempt history, status APIs |
-| `MockErp.Api` | Simulated ERP customer, order, stock movement, accounting, order history, idempotency |
+| `MockErp.Api` | Simulated ERP customer/current account, ERP order, delivery snapshot, stock card and movement, sales accounting voucher, order history, idempotency |
 
 The browser only calls `OnlineMarket.Web`.
 
@@ -45,13 +45,24 @@ Recommendation failure must not break catalogue, cart, or checkout.
 
 ## ERP Scope
 
-The simulated ERP creates:
+The simulated ERP creates and preserves:
 
-- customer account,
-- ERP order,
-- ERP stock movement,
-- balanced accounting entry,
+- a customer/current-account card with ERP customer code and contact data,
+- an ERP order with item, price, VAT, total, payment-method, and delivery-address snapshots,
+- an ERP stock card containing SKU, name, unit, net content, quantity, and reorder level,
+- one stock movement per sold product,
+- one sales accounting voucher per order,
+- account-coded accounting lines for customer receivable, domestic sales, and VAT payable,
+- a direct customer reference on the accounting voucher,
 - customer ERP order history.
+
+The V1 sales voucher uses this project mapping:
+
+- account `120` — Customers/Receivables: debit `GrandTotal`,
+- account `600` — Domestic Sales: credit `Subtotal`,
+- account `391` — VAT Payable: credit `VatTotal`.
+
+This is a project simulation, not a legal accounting implementation or a real Uyumsoft contract.
 
 If ERP is unavailable, the market order remains valid and the integration retries later.
 
@@ -66,12 +77,26 @@ If ERP is unavailable, the market order remains valid and the integration retrie
 
 Payment is simulation only.
 
+The non-sensitive `PaymentMethod` value is sent to ERP as an order/accounting snapshot.
+
 Never collect:
 
 - card number,
 - CVV,
 - expiry date,
 - real bank or payment-provider token.
+
+## ERP Parity Boundaries
+
+Deliberately excluded from V1:
+
+- tax number or Turkish identity number,
+- open-account balance and maturity tracking,
+- supplier/current-account types other than customer,
+- draft/approval/cancellation document workflow,
+- dispatch note and shipment operations,
+- multi-warehouse or location management,
+- legal invoice/e-ledger/e-invoice compliance.
 
 ## Out of Scope
 
