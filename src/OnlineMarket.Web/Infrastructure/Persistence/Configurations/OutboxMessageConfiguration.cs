@@ -35,7 +35,8 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
 
         builder.Property(om => om.Status)
             .HasColumnType("tinyint")
-            .HasDefaultValue(Domain.Enums.OutboxStatus.Pending);
+            .HasDefaultValue(Domain.Enums.OutboxStatus.Pending)
+            .HasSentinel((Domain.Enums.OutboxStatus)0);
 
         builder.Property(om => om.OccurredAtUtc)
             .HasColumnType("datetime2(3)");

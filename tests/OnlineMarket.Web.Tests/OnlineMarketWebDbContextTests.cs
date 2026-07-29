@@ -1,199 +1,244 @@
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using OnlineMarket.Web.Domain.Entities;
-using OnlineMarket.Web.Domain.Enums;
-using OnlineMarket.Web.Infrastructure.Persistence;
-using Xunit;
 
 namespace OnlineMarket.Web.Tests;
 
-public class OnlineMarketWebDbContextTests
+[Collection(OnlineMarketSqlServerCollection.CollectionName)]
+public sealed class OnlineMarketWebDbContextTests
 {
-    private DbContextOptions<OnlineMarketDbContext> CreateLocalDbOptions(string dbName)
+    private const string InitialMigration =
+        "20260728145429_202607281800_InitialOnlineMarketSchema";
+
+    private readonly OnlineMarketSqlServerFixture fixture;
+
+    public OnlineMarketWebDbContextTests(OnlineMarketSqlServerFixture fixture)
     {
-        var connectionString = $"Server=(localdb)\\mssqllocaldb;Database={dbName};Trusted_Connection=True;MultipleActiveResultSets=true;TrustServerCertificate=True;";
-        return new DbContextOptionsBuilder<OnlineMarketDbContext>()
-            .UseSqlServer(connectionString)
-            .Options;
+        this.fixture = fixture;
     }
 
     [Fact]
-    public async Task Can_Apply_Migrations_And_Create_Tables_Successfully()
+    public async Task AllMigrationsApplyToEmptyDatabaseAndCreateExpectedSchema()
     {
-        var dbName = $"Test_OnlineMarketDb_{Guid.NewGuid():N}";
-        var options = CreateLocalDbOptions(dbName);
+        await using var database = await fixture.CreateDatabaseAsync(applyMigrations: false);
+        await using var context = database.CreateContext();
 
-        using (var context = new OnlineMarketDbContext(options))
-        {
-            try
-            {
-                // Act: Apply migrations
-                await context.Database.MigrateAsync();
+        await context.Database.MigrateAsync();
 
-                // Assert: Can query DbContext
-                var canConnect = await context.Database.CanConnectAsync();
-                Assert.True(canConnect);
+        var tables = await QueryStringsAsync(
+            database.ConnectionString,
+            """
+            SELECT [name]
+            FROM sys.tables
+            ORDER BY [name];
+            """);
 
-                // Verify tables exist by adding a Brand
-                var brand = new Brand
-                {
-                    Id = Guid.NewGuid(),
-                    Name = "Test Brand",
-                    Slug = "test-brand",
-                    CreatedAtUtc = DateTime.UtcNow,
-                    UpdatedAtUtc = DateTime.UtcNow
-                };
+        string[] expectedTables =
+        [
+            "AspNetRoleClaims",
+            "AspNetRoles",
+            "AspNetUserClaims",
+            "AspNetUserLogins",
+            "AspNetUserRoles",
+            "AspNetUsers",
+            "AspNetUserTokens",
+            "Brands",
+            "CartItems",
+            "Carts",
+            "Categories",
+            "CustomerAddresses",
+            "Customers",
+            "OrderAddresses",
+            "OrderItems",
+            "Orders",
+            "OutboxMessages",
+            "Payments",
+            "Products",
+            "StockMovements",
+            "Stocks",
+            "__EFMigrationsHistory"
+        ];
 
-                context.Brands.Add(brand);
-                await context.SaveChangesAsync();
+        Assert.All(expectedTables, table => Assert.Contains(table, tables));
 
-                var savedBrand = await context.Brands.FirstOrDefaultAsync(b => b.Id == brand.Id);
-                Assert.NotNull(savedBrand);
-                Assert.Equal("Test Brand", savedBrand.Name);
-            }
-            finally
-            {
-                await context.Database.EnsureDeletedAsync();
-            }
-        }
+        var coveringIndexCount = await QueryScalarAsync<int>(
+            database.ConnectionString,
+            """
+            SELECT COUNT(*)
+            FROM sys.indexes
+            WHERE [object_id] = OBJECT_ID(N'[Products]')
+              AND [name] = N'IX_Products_CategoryId_IsActive_Name_Covering';
+            """);
+        var duplicateProductKeyCount = await QueryScalarAsync<int>(
+            database.ConnectionString,
+            """
+            SELECT COUNT(DISTINCT i.[index_id])
+            FROM sys.indexes i
+            JOIN sys.index_columns ic1
+              ON ic1.[object_id] = i.[object_id]
+             AND ic1.[index_id] = i.[index_id]
+             AND ic1.[key_ordinal] = 1
+            JOIN sys.columns c1
+              ON c1.[object_id] = ic1.[object_id]
+             AND c1.[column_id] = ic1.[column_id]
+            JOIN sys.index_columns ic2
+              ON ic2.[object_id] = i.[object_id]
+             AND ic2.[index_id] = i.[index_id]
+             AND ic2.[key_ordinal] = 2
+            JOIN sys.columns c2
+              ON c2.[object_id] = ic2.[object_id]
+             AND c2.[column_id] = ic2.[column_id]
+            JOIN sys.index_columns ic3
+              ON ic3.[object_id] = i.[object_id]
+             AND ic3.[index_id] = i.[index_id]
+             AND ic3.[key_ordinal] = 3
+            JOIN sys.columns c3
+              ON c3.[object_id] = ic3.[object_id]
+             AND c3.[column_id] = ic3.[column_id]
+            WHERE i.[object_id] = OBJECT_ID(N'[Products]')
+              AND c1.[name] = N'CategoryId'
+              AND c2.[name] = N'IsActive'
+              AND c3.[name] = N'Name';
+            """);
+        var includedColumns = await QueryStringsAsync(
+            database.ConnectionString,
+            """
+            SELECT c.[name]
+            FROM sys.indexes i
+            JOIN sys.index_columns ic
+              ON ic.[object_id] = i.[object_id]
+             AND ic.[index_id] = i.[index_id]
+            JOIN sys.columns c
+              ON c.[object_id] = ic.[object_id]
+             AND c.[column_id] = ic.[column_id]
+            WHERE i.[object_id] = OBJECT_ID(N'[Products]')
+              AND i.[name] = N'IX_Products_CategoryId_IsActive_Name_Covering'
+              AND ic.[is_included_column] = 1
+            ORDER BY c.[name];
+            """);
+
+        Assert.Equal(1, coveringIndexCount);
+        Assert.Equal(1, duplicateProductKeyCount);
+        Assert.Equal(["BrandId", "ImageUrl", "Price"], includedColumns);
+
+        var requiredChecks = await QueryStringsAsync(
+            database.ConnectionString,
+            """
+            SELECT [name]
+            FROM sys.check_constraints
+            WHERE [name] IN
+            (
+                N'CK_Stocks_Quantity_NonNegative',
+                N'CK_StockMovements_Balance',
+                N'CK_Orders_GrandTotal',
+                N'CK_OrderItems_LineTotal',
+                N'CK_OutboxMessages_Payload_IsJson'
+            )
+            ORDER BY [name];
+            """);
+        var requiredForeignKeys = await QueryStringsAsync(
+            database.ConnectionString,
+            """
+            SELECT [name]
+            FROM sys.foreign_keys
+            WHERE [name] IN
+            (
+                N'FK_Customers_AspNetUsers_UserId',
+                N'FK_Orders_Carts_SourceCartId',
+                N'FK_Orders_Customers_CustomerId',
+                N'FK_Stocks_Products_ProductId'
+            )
+            ORDER BY [name];
+            """);
+
+        Assert.Equal(5, requiredChecks.Count);
+        Assert.Equal(4, requiredForeignKeys.Count);
+        Assert.Equal(
+            1,
+            await QueryScalarAsync<int>(
+                database.ConnectionString,
+                "SELECT COUNT(*) FROM sys.sequences WHERE [name] = N'OnlineMarketOrderNumberSequence';"));
     }
 
     [Fact]
-    public async Task CheckConstraint_Stocks_Quantity_NonNegative_Rejects_Negative_Values()
+    public async Task ExistingInitialDatabaseUpgradesWithoutLosingBusinessData()
     {
-        var dbName = $"Test_StockConstraint_{Guid.NewGuid():N}";
-        var options = CreateLocalDbOptions(dbName);
+        await using var database = await fixture.CreateDatabaseAsync(applyMigrations: false);
+        await using var context = database.CreateContext();
+        var migrator = context.GetService<IMigrator>();
 
-        using var context = new OnlineMarketDbContext(options);
-        try
+        await migrator.MigrateAsync(InitialMigration);
+
+        var brandId = Guid.NewGuid();
+        context.Brands.Add(new Brand
         {
-            await context.Database.MigrateAsync();
+            Id = brandId,
+            Name = "Upgrade survivor",
+            Slug = $"upgrade-{brandId:N}",
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await context.SaveChangesAsync();
 
-            var category = new Category
-            {
-                Id = Guid.NewGuid(),
-                Name = "Cat1",
-                Slug = "cat-1",
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
-            };
-            var brand = new Brand
-            {
-                Id = Guid.NewGuid(),
-                Name = "Brand1",
-                Slug = "brand-1",
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
-            };
-            var product = new Product
-            {
-                Id = Guid.NewGuid(),
-                Sku = "SKU-TEST-01",
-                Name = "Test Product",
-                Slug = "test-product",
-                CategoryId = category.Id,
-                BrandId = brand.Id,
-                Price = 10.00m,
-                VatRate = 1.00m,
-                NetContent = 1.000m,
-                UnitType = UnitType.Piece,
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
-            };
-            var stock = new Stock
-            {
-                ProductId = product.Id,
-                Quantity = -5, // Negative quantity violates CK_Stocks_Quantity_NonNegative
-                UpdatedAtUtc = DateTime.UtcNow
-            };
+        Assert.Equal(
+            0,
+            await QueryScalarAsync<int>(
+                database.ConnectionString,
+                "SELECT COUNT(*) FROM sys.sequences WHERE [name] = N'OnlineMarketOrderNumberSequence';"));
 
-            context.Categories.Add(category);
-            context.Brands.Add(brand);
-            context.Products.Add(product);
-            context.Stocks.Add(stock);
+        await migrator.MigrateAsync();
 
-            await Assert.ThrowsAsync<DbUpdateException>(async () =>
-            {
-                await context.SaveChangesAsync();
-            });
-        }
-        finally
-        {
-            await context.Database.EnsureDeletedAsync();
-        }
+        Assert.True(await context.Brands.AnyAsync(brand => brand.Id == brandId));
+        Assert.Equal(
+            1,
+            await QueryScalarAsync<int>(
+                database.ConnectionString,
+                "SELECT COUNT(*) FROM sys.sequences WHERE [name] = N'OnlineMarketOrderNumberSequence';"));
+        Assert.Equal(2, (await context.Database.GetAppliedMigrationsAsync()).Count());
     }
 
     [Fact]
-    public async Task FilteredIndex_CustomerAddresses_Prevents_Multiple_Active_Default_Addresses()
+    public async Task MigratedDatabaseHasNoPendingMigrations()
     {
-        var dbName = $"Test_AddressFilterIndex_{Guid.NewGuid():N}";
-        var options = CreateLocalDbOptions(dbName);
+        await using var database = await fixture.CreateDatabaseAsync();
+        await using var context = database.CreateContext();
 
-        using var context = new OnlineMarketDbContext(options);
-        try
+        Assert.Empty(await context.Database.GetPendingMigrationsAsync());
+        Assert.Equal(2, (await context.Database.GetAppliedMigrationsAsync()).Count());
+    }
+
+    private static async Task<List<string>> QueryStringsAsync(
+        string connectionString,
+        string sql)
+    {
+        var values = new List<string>();
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
         {
-            await context.Database.MigrateAsync();
-
-            var user = new ApplicationUser
-            {
-                Id = Guid.NewGuid(),
-                UserName = "user@test.com",
-                NormalizedUserName = "USER@TEST.COM",
-                Email = "user@test.com",
-                NormalizedEmail = "USER@TEST.COM",
-                SecurityStamp = Guid.NewGuid().ToString()
-            };
-            var customer = new Customer
-            {
-                Id = Guid.NewGuid(),
-                UserId = user.Id,
-                FirstName = "Ali",
-                LastName = "Yilmaz",
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
-            };
-            var addr1 = new CustomerAddress
-            {
-                Id = Guid.NewGuid(),
-                CustomerId = customer.Id,
-                Title = "Ev",
-                ContactName = "Ali Yilmaz",
-                PhoneNumber = "5551112233",
-                AddressLine1 = "Adres 1",
-                District = "Kadikoy",
-                City = "Istanbul",
-                IsDefault = true,
-                IsActive = true,
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
-            };
-            var addr2 = new CustomerAddress
-            {
-                Id = Guid.NewGuid(),
-                CustomerId = customer.Id,
-                Title = "Is",
-                ContactName = "Ali Yilmaz",
-                PhoneNumber = "5551112233",
-                AddressLine1 = "Adres 2",
-                District = "Besiktas",
-                City = "Istanbul",
-                IsDefault = true, // Duplicate active default address violates UX_CustomerAddresses_Default
-                IsActive = true,
-                CreatedAtUtc = DateTime.UtcNow,
-                UpdatedAtUtc = DateTime.UtcNow
-            };
-
-            context.Users.Add(user);
-            context.Customers.Add(customer);
-            context.CustomerAddresses.AddRange(addr1, addr2);
-
-            await Assert.ThrowsAsync<DbUpdateException>(async () =>
-            {
-                await context.SaveChangesAsync();
-            });
+            values.Add(reader.GetString(0));
         }
-        finally
-        {
-            await context.Database.EnsureDeletedAsync();
-        }
+
+        return values;
+    }
+
+    private static async Task<T> QueryScalarAsync<T>(
+        string connectionString,
+        string sql)
+    {
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return (T)Convert.ChangeType(
+            await command.ExecuteScalarAsync()
+                ?? throw new InvalidOperationException("The scalar query returned null."),
+            typeof(T),
+            System.Globalization.CultureInfo.InvariantCulture);
     }
 }

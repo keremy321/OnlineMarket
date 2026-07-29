@@ -1,10 +1,8 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using OnlineMarket.Web.Application.Interfaces;
 using OnlineMarket.Web.Application.Models;
-using OnlineMarket.Web.Infrastructure.Persistence;
 using OnlineMarket.Web.Models;
 
 namespace OnlineMarket.Web.Controllers;
@@ -13,39 +11,30 @@ namespace OnlineMarket.Web.Controllers;
 public class AdminController : Controller
 {
     private readonly ICatalogService _catalogService;
-    private readonly IOrderService _orderService;
-    private readonly OnlineMarketDbContext _dbContext;
+    private readonly IAdminQueryService _adminQueryService;
     private readonly IOutboxService _outboxService;
 
     public AdminController(
         ICatalogService catalogService,
-        IOrderService orderService,
-        OnlineMarketDbContext dbContext,
+        IAdminQueryService adminQueryService,
         IOutboxService outboxService)
     {
         _catalogService = catalogService;
-        _orderService = orderService;
-        _dbContext = dbContext;
+        _adminQueryService = adminQueryService;
         _outboxService = outboxService;
     }
 
     [HttpGet]
     public async Task<IActionResult> Index()
     {
-        var totalProducts = await _dbContext.Products.CountAsync();
-        var outOfStock = await _dbContext.Stocks.CountAsync(s => s.Quantity <= 0);
-        var totalOrders = await _dbContext.Orders.CountAsync();
-        var pendingOutbox = await _dbContext.OutboxMessages.CountAsync(m => m.Status == Domain.Enums.OutboxStatus.Pending);
-
-        var recentOrders = await _orderService.GetAllOrdersForAdminAsync();
-
+        var dashboard = await _adminQueryService.GetDashboardAsync();
         var viewModel = new AdminDashboardViewModel
         {
-            TotalProducts = totalProducts,
-            OutOfStockProducts = outOfStock,
-            TotalOrders = totalOrders,
-            PendingOutboxMessages = pendingOutbox,
-            RecentOrders = recentOrders.Take(10).ToList()
+            TotalProducts = dashboard.TotalProducts,
+            OutOfStockProducts = dashboard.OutOfStockProducts,
+            TotalOrders = dashboard.TotalOrders,
+            PendingOutboxMessages = dashboard.PendingOutboxMessages,
+            RecentOrders = dashboard.RecentOrders
         };
 
         return View(viewModel);
@@ -215,12 +204,22 @@ public class AdminController : Controller
     [HttpGet]
     public async Task<IActionResult> Outbox()
     {
-        var messages = await _dbContext.OutboxMessages
-            .OrderByDescending(m => m.OccurredAtUtc)
-            .Take(100)
-            .ToListAsync();
+        var messages = await _adminQueryService.GetRecentOutboxMessagesAsync(100);
+        var viewModel = messages.Select(message => new AdminOutboxMessageViewModel
+        {
+            Id = message.Id,
+            EventType = message.EventType,
+            Destination = message.Destination,
+            AggregateId = message.AggregateId,
+            Status = message.Status,
+            AttemptCount = message.AttemptCount,
+            OccurredAtUtc = message.OccurredAtUtc,
+            ProcessedAtUtc = message.ProcessedAtUtc,
+            LastErrorCode = message.LastErrorCode,
+            MaskedLastError = message.MaskedLastError
+        }).ToList();
 
-        return View(messages);
+        return View(viewModel);
     }
 
     [HttpPost]

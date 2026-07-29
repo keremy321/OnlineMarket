@@ -48,6 +48,14 @@ Infrastructure implements external and persistence concerns.
 
 Admin UI is an MVC Area, not a separate domain module.
 
+The existing Online Market CLR entity/configuration namespaces remain in their
+pre-reconciliation folders to preserve compatibility with the shared initial
+migration. New integration-event DTOs and canonical serialization are owned by
+`Common/Messaging`, while SQL-specific stock mutation, order-number allocation,
+and outbox persistence stay in Infrastructure behind application interfaces.
+A physical module move is deferred because a cosmetic move provides no runtime
+benefit and creates avoidable migration-history risk.
+
 ## Checkout Transaction
 
 Inside one SQL transaction:
@@ -63,6 +71,20 @@ Inside one SQL transaction:
 9. Commit.
 
 No HTTP request is allowed inside this transaction.
+
+`OrderReadyForErpV1` carries the non-sensitive payment method together with
+customer, delivery-address, total, and item snapshots.
+
+Order numbers are allocated from the SQL Server
+`OnlineMarketOrderNumberSequence`; sequence gaps are allowed, while the unique
+order-number index remains the final database guarantee.
+
+## Database Lifecycle
+
+Ordinary application startup does not apply migrations, create schema, seed
+catalogue data, or delete development data. Schema changes use the controlled
+database scripts. Catalogue/role/admin seeding is an explicit Development-only
+command that assumes all migrations are already applied.
 
 ## Outbox
 
@@ -92,7 +114,7 @@ Event intake saves:
 
 - processed event,
 - batch,
-- customer/address/order snapshot,
+- customer, delivery-address, order, payment-method, and total snapshot,
 - order lines,
 - four ordered steps.
 
@@ -100,6 +122,53 @@ It returns `202 Accepted` after the transaction commits.
 
 The worker executes one valid step at a time and records every attempt.
 
+The four steps remain:
+
+1. Ensure customer.
+2. Create ERP order and immutable delivery-address snapshot.
+3. Create ERP stock movements.
+4. Create accounting voucher header and account-coded lines.
+
+## Mock ERP Write Model
+
+### Ensure customer
+
+- Reuse one ERP customer for each external market `CustomerId`.
+- Store ERP customer code, name, email, phone, and current address.
+- Do not store tax/identity number, open-account balance, or supplier type.
+
+### Create order
+
+- Persist order and line snapshots.
+- Persist the selected delivery address as an order-level immutable snapshot.
+- Persist the non-sensitive payment-method enum.
+- V1 orders are created as completed sales documents; draft/approval workflow
+  and dispatch notes are not modelled.
+
+### Create stock movement
+
+- Use a Mock ERP-owned stock balance independent from market stock.
+- The stock card keeps SKU, product name, unit type, net content, quantity,
+  and reorder level.
+- Use one stock movement per order and product.
+- V1 assumes one warehouse and has no warehouse/location table.
+
+### Create accounting entry
+
+Create one sales voucher header and three deterministic lines:
+
+1. Account `120` — Customers/Receivables:
+   debit `GrandTotal`, direct ERP customer reference.
+2. Account `600` — Domestic Sales:
+   credit `Subtotal`.
+3. Account `391` — VAT Payable:
+   credit `VatTotal`.
+
+The voucher stores type, date, description, payment method, direct customer
+reference, total debit, and total credit. Total debit must equal total credit.
+
+This is a project simulation and must not be represented as a legal accounting
+or real Uyumsoft contract.
 
 ## HTTP and Retry
 

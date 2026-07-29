@@ -213,3 +213,52 @@ Human: approve and commit
 ```
 
 Use separate branches or Git worktrees for parallel agents.
+
+## ERP Parity Prompt Example
+
+```text
+Read AGENTS.md, docs/ai/PROJECT.md, docs/ai/ARCHITECTURE.md,
+docs/ai/DATA_AND_CONTRACTS.md, and docs/ai/DATABASE.md.
+
+Task ID: ERP-PARITY
+Goal: implement or review the approved ERP field-to-model parity changes.
+
+Required scope:
+- OrderReadyForErpV1 PaymentMethod
+- IntegrationOrderSnapshot PaymentMethod
+- ERP order delivery-address snapshot
+- ERP stock UnitType, NetContent, and ReorderLevel
+- accounting voucher header with direct ErpCustomerId
+- accounting voucher lines with account codes 120, 600, and 391
+
+Before editing:
+1. Compare contracts, entities, EF configurations, migrations, and tests.
+2. List every producer and consumer affected.
+3. Identify whether the change is breaking for existing V1 JSON.
+4. List the exact migration operations.
+5. Wait for approval.
+
+Rules:
+- Do not add tax/identity number, open balance, supplier type, dispatch,
+  multi-warehouse, or legal accounting features.
+- Do not store sensitive payment data.
+- PaymentMethod is a non-sensitive enum snapshot.
+- CreateOrder persists order, lines, address snapshot, and payment method
+  atomically with its idempotency record.
+- CreateAccountingEntry persists header, lines, and idempotency record
+  atomically.
+- The accounting lines are:
+  120 debit GrandTotal,
+  600 credit Subtotal,
+  391 credit VatTotal.
+- Total debit must equal total credit.
+- Keep Mock ERP explicitly described as a project simulation.
+
+Verification:
+- serialization/contract tests,
+- migration-based SQL Server tests,
+- idempotency tests,
+- accounting-balance tests,
+- full solution build and tests.
+```
+

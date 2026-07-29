@@ -1,0 +1,19 @@
+warning: in the working copy of '.gitignore', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'deploy/docker-compose.database.yml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/database-development.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/database/migrate-all.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/database/reset-development-databases.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/database/start-database.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/database/stop-database.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'scripts/database/verify-databases.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/OnlineMarket.Web/appsettings.Development.json', LF will be replaced by CRLF the next time Git touches it
+ .gitignore                                        |   3 [32m+[m
+ deploy/docker-compose.database.yml                |  22 [32m+[m[31m-[m
+ docs/database-development.md                      | 240 [32m++++++++++++++[m[31m---[m
+ scripts/database/migrate-all.ps1                  | 243 [32m++++++++++++++++[m[31m-[m
+ scripts/database/reset-development-databases.ps1  | 310 [32m+++++++++++++++++++++[m[31m-[m
+ scripts/database/start-database.ps1               |  41 [32m+[m[31m--[m
+ scripts/database/stop-database.ps1                |  22 [32m+[m[31m-[m
+ scripts/database/verify-databases.ps1             | 197 [32m+++++++++++++[m[31m-[m
+ src/OnlineMarket.Web/appsettings.Development.json |   3 [31m-[m
+ 9 files changed, 992 insertions(+), 89 deletions(-)

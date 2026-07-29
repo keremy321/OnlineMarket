@@ -94,6 +94,31 @@ ERP steps run in this order:
 3. Create stock movement
 4. Create accounting entry
 
+`OrderReadyForErpV1` must carry the non-sensitive `PaymentMethod` enum together
+with customer, delivery-address, totals, and item snapshots. Never carry card
+number, CVV, expiry date, payment token, or provider credentials.
+
+Mock ERP CreateOrder must persist the ERP order, lines, payment method, and
+immutable delivery-address snapshot atomically with its idempotency record.
+
+Mock ERP stock cards include `UnitType`, `NetContent`, `Quantity`, and
+`ReorderLevel`. Market stock and ERP stock remain separate, and V1 assumes one
+warehouse.
+
+Mock ERP CreateAccountingEntry must persist one sales-voucher header and
+exactly these account-coded lines:
+
+- `120` Customers/Receivables: debit `GrandTotal`, direct ERP customer reference
+- `600` Domestic Sales: credit `Subtotal`
+- `391` VAT Payable: credit `VatTotal`
+
+Total debit must equal total credit. The voucher stores a direct customer
+reference, payment method, entry date, voucher type, and description.
+
+Do not add tax/identity number, open-account balance, supplier type, dispatch
+documents, multi-warehouse/location, or legal accounting features without an
+approved scope decision.
+
 The worker must:
 
 - resume from the first incomplete step,
@@ -102,8 +127,8 @@ The worker must:
 - persist every attempt,
 - distinguish transient and permanent failures.
 
-Mock ERP is a project simulation, not a real Uyumsoft contract.
-
+Mock ERP is a project simulation, not a real Uyumsoft or legal accounting
+contract.
 
 ## Before Editing
 

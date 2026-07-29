@@ -138,16 +138,33 @@ public class AdminDashboardViewModel
     public List<OrderDto> RecentOrders { get; set; } = new();
 }
 
+public sealed class AdminOutboxMessageViewModel
+{
+    public long Id { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string Destination { get; set; } = string.Empty;
+    public Guid AggregateId { get; set; }
+    public OutboxStatus Status { get; set; }
+    public int AttemptCount { get; set; }
+    public DateTime OccurredAtUtc { get; set; }
+    public DateTime? ProcessedAtUtc { get; set; }
+    public string? LastErrorCode { get; set; }
+    public string? MaskedLastError { get; set; }
+}
+
 public class ProductFormViewModel
 {
     public Guid? Id { get; set; }
 
     [Required(ErrorMessage = "SKU zorunludur.")]
+    [StringLength(64)]
     public string Sku { get; set; } = string.Empty;
 
     [Required(ErrorMessage = "Ürün adı zorunludur.")]
+    [StringLength(200)]
     public string Name { get; set; } = string.Empty;
 
+    [StringLength(2000)]
     public string? Description { get; set; }
 
     [Required(ErrorMessage = "Kategori seçiniz.")]
@@ -168,6 +185,7 @@ public class ProductFormViewModel
 
     public UnitType UnitType { get; set; } = UnitType.Piece;
 
+    [StringLength(500)]
     public string? ImageUrl { get; set; }
 
     public bool IsActive { get; set; } = true;
@@ -189,5 +207,6 @@ public class StockAdjustViewModel
     public int QuantityChange { get; set; }
 
     [Required(ErrorMessage = "Açıklama/Neden zorunludur.")]
+    [StringLength(500)]
     public string Reason { get; set; } = string.Empty;
 }

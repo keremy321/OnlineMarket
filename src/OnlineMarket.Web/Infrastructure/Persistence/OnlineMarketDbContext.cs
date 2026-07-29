@@ -31,5 +31,8 @@ public class OnlineMarketDbContext : IdentityDbContext<ApplicationUser, Identity
     {
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(typeof(OnlineMarketDbContext).Assembly);
+        builder.HasSequence<long>("OnlineMarketOrderNumberSequence")
+            .StartsAt(1)
+            .IncrementsBy(1);
     }
 }

@@ -13,17 +13,20 @@ public class CheckoutController : Controller
     private readonly ICartService _cartService;
     private readonly ICustomerAddressService _addressService;
     private readonly ICheckoutService _checkoutService;
+    private readonly IOrderService _orderService;
     private readonly IAuthService _authService;
 
     public CheckoutController(
         ICartService cartService,
         ICustomerAddressService addressService,
         ICheckoutService checkoutService,
+        IOrderService orderService,
         IAuthService authService)
     {
         _cartService = cartService;
         _addressService = addressService;
         _checkoutService = checkoutService;
+        _orderService = orderService;
         _authService = authService;
     }
 
@@ -106,6 +109,13 @@ public class CheckoutController : Controller
         var customerId = await GetCurrentCustomerIdAsync();
         if (!customerId.HasValue) return RedirectToAction("Login", "Account");
 
-        return View(new OrderSuccessViewModel { OrderId = id, OrderNumber = id.ToString().Substring(0, 8).ToUpper() });
+        var order = await _orderService.GetOrderByIdAsync(id, customerId.Value);
+        if (order == null) return NotFound();
+
+        return View(new OrderSuccessViewModel
+        {
+            OrderId = order.Id,
+            OrderNumber = order.OrderNumber
+        });
     }
 }

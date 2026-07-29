@@ -1,6 +1,16 @@
+using Microsoft.EntityFrameworkCore;
+using Recommendation.Api.Infrastructure.Persistence;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
+
+var connectionString = builder.Configuration.GetConnectionString("RecommendationDb")
+    ?? throw new InvalidOperationException(
+        "Connection string 'RecommendationDb' is required.");
+
+builder.Services.AddDbContext<RecommendationDbContext>(options =>
+    options.UseSqlServer(connectionString));
 
 builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi

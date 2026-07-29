@@ -78,9 +78,6 @@ public class ProductConfiguration : IEntityTypeConfiguration<Product>
             .IsUnique()
             .HasDatabaseName("UX_Products_Slug");
 
-        builder.HasIndex(p => new { p.CategoryId, p.IsActive, p.Name })
-            .HasDatabaseName("IX_Products_CategoryId_IsActive_Name");
-
         builder.HasIndex(p => new { p.BrandId, p.IsActive, p.Name })
             .HasDatabaseName("IX_Products_BrandId_IsActive_Name");
 

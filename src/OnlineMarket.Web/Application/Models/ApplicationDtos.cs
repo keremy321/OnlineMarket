@@ -170,3 +170,47 @@ public record RecommendationItemDto(
     decimal Score,
     ProductDto? ProductDetails
 );
+
+public sealed record AdminDashboardDto(
+    int TotalProducts,
+    int OutOfStockProducts,
+    int TotalOrders,
+    int PendingOutboxMessages,
+    List<OrderDto> RecentOrders);
+
+public sealed record AdminOutboxMessageDto(
+    long Id,
+    string EventType,
+    string Destination,
+    Guid AggregateId,
+    OutboxStatus Status,
+    int AttemptCount,
+    DateTime OccurredAtUtc,
+    DateTime? ProcessedAtUtc,
+    string? LastErrorCode,
+    string? MaskedLastError);
+
+public readonly record struct StockMutationResultDto(
+    int PreviousQuantity,
+    int NewQuantity);
+
+public sealed record ClaimedOutboxMessageDto(
+    long Id,
+    string EventType,
+    string Destination,
+    string Payload);
+
+public sealed record OutboxDeliveryResultDto(
+    long MessageId,
+    string WorkerId,
+    bool Succeeded,
+    bool Retryable,
+    string? ErrorCode,
+    string? MaskedError,
+    DateTime CompletedAtUtc);
+
+public sealed record OutboxDispatchResultDto(
+    bool Succeeded,
+    bool Retryable,
+    string? ErrorCode,
+    string? MaskedError);

@@ -37,6 +37,9 @@ Important rules:
 - one order per source cart,
 - order and outbox records commit together.
 
+`Stocks.ReorderLevel` is the product-specific critical-stock threshold used by
+low-stock queries. It is not a warehouse/location model.
+
 ### RecommendationDb
 
 - Product snapshots
@@ -54,7 +57,8 @@ Do not store address, phone, payment, or other unnecessary personal data.
 
 - Processed events
 - Integration batches
-- Order/customer/address snapshots
+- Order/customer/delivery-address snapshots
+- Payment-method snapshot
 - Integration lines
 - Steps
 - Attempts
@@ -65,9 +69,9 @@ The snapshot must contain enough data to retry without calling Online Market.
 ### MockErpDb
 
 - ERP customers
-- ERP orders and lines
-- ERP stocks and movements
-- ERP accounting entries
+- ERP orders, delivery-address snapshots, and lines
+- ERP stock cards and movements
+- ERP accounting voucher headers and account-coded lines
 - Idempotency records
 
 ## Events
@@ -114,12 +118,134 @@ Must not contain address, email, phone, payment, or financial details.
 
 ### OrderReadyForErpV1
 
-Carries order, customer, selected address, totals, and item snapshots required for durable ERP retry.
+Carries:
+
+```text
+EventId
+OccurredAtUtc
+CorrelationId
+OrderId
+OrderNumber
+OrderPlacedAtUtc
+PaymentMethod
+Customer {
+  CustomerId
+  FirstName
+  LastName
+  Email
+}
+Address {
+  RecipientName
+  PhoneNumber
+  AddressLine1
+  AddressLine2?
+  District
+  City
+  PostalCode?
+  CountryCode
+}
+Totals {
+  Subtotal
+  VatTotal
+  GrandTotal
+  Currency
+}
+Items[] {
+  ProductId
+  Sku
+  ProductName
+  Quantity
+  UnitPrice
+  VatRate
+  NetLineAmount
+  VatAmount
+  LineTotal
+}
+```
+
+`PaymentMethod` is a non-sensitive enum snapshot with the same numeric values
+as the Online Market contract:
+
+```text
+1 = CashSimulation
+2 = CardSimulation
+3 = TransferSimulation
+```
 
 Each `ProductId` may appear at most once in `Items`. The ERP Integration
 consumer rejects duplicate product lines during request validation; it does
 not merge or normalise them.
 
+Do not include card number, CVV, expiry date, payment token, or provider
+credentials.
+
+## ERP Data-Parity Rules
+
+### Customer/current-account card
+
+The Mock ERP customer record contains:
+
+- ERP customer code,
+- external market customer ID,
+- name,
+- email,
+- phone,
+- current address.
+
+V1 deliberately excludes tax/identity number, open-account balance, and
+supplier/current-account type.
+
+### ERP order
+
+The ERP order stores:
+
+- ERP and market order numbers,
+- direct ERP customer relation,
+- order date,
+- payment method,
+- line price/VAT snapshots,
+- subtotal, VAT total, grand total, and currency,
+- an immutable delivery-address snapshot.
+
+V1 does not model draft/approval/cancellation workflow or dispatch notes.
+
+### ERP stock card
+
+The ERP stock card stores:
+
+- external product ID,
+- SKU,
+- product name,
+- unit type,
+- net content,
+- current quantity,
+- reorder level.
+
+Market stock and ERP stock are independent balances. V1 assumes one warehouse.
+
+### ERP sales accounting voucher
+
+One accounting voucher is created per ERP order. It contains:
+
+- voucher number,
+- voucher type `SalesInvoice`,
+- entry date,
+- direct ERP customer reference,
+- payment method,
+- description,
+- total debit and total credit,
+- currency.
+
+It contains exactly these V1 project lines:
+
+```text
+120 Customers/Receivables  Debit  = GrandTotal
+600 Domestic Sales        Credit = Subtotal
+391 VAT Payable           Credit = VatTotal
+```
+
+The sum of debit lines must equal the sum of credit lines. This is a project
+simulation, not a legal accounting or real Uyumsoft contract.
 
 ## Event Idempotency
 
@@ -165,3 +291,9 @@ GET  /api/v1/customers/{erpCustomerCode}/orders
 ```
 
 State-changing Mock ERP requests require a stable `Idempotency-Key`.
+
+`POST /api/v1/orders` must persist the ERP order, its lines, its payment
+method, and its delivery-address snapshot atomically.
+
+`POST /api/v1/accounting-entries` must persist the voucher header, all
+account-coded lines, and its idempotency record atomically.
