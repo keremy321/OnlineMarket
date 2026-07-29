@@ -1,14 +1,12 @@
+param(
+    [switch]$Overwrite
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
-$containerName = "online-market-sqlserver"
-$expectedDatabaseNames = @(
-    "OnlineMarketDb",
-    "RecommendationDb",
-    "IntegrationDb",
-    "MockErpDb"
-)
+$outputDirectory = Join-Path $repositoryRoot "scripts\database\generated"
 
 function Get-DatabaseTargets {
     @(
@@ -117,79 +115,76 @@ function Get-DatabaseReadiness {
 }
 
 Restore-EfTool
-$readinessSummary = @()
-$verificationFailure = $false
+if (-not (Test-Path -LiteralPath $outputDirectory -PathType Container)) {
+    $null = New-Item -ItemType Directory -Path $outputDirectory
+}
+
+$timestamp = Get-Date -Format "yyyyMMddHHmmss"
+$summary = @()
+$generationFailure = $false
 
 foreach ($target in Get-DatabaseTargets) {
+    Write-Host "Inspecting $($target.Database)..." -ForegroundColor Cyan
     $readiness = Get-DatabaseReadiness -Target $target
-    if ($readiness.State -eq "Failed") {
-        $verificationFailure = $true
-    }
 
-    $readinessSummary += [pscustomobject]@{
-        Database = $target.Database
-        Context = $target.Context
-        State = $readiness.State
-        Detail = $readiness.Detail
-    }
-}
-
-Write-Host "`nEF Core readiness summary:" -ForegroundColor Cyan
-$readinessSummary | Format-Table -AutoSize -Wrap
-
-$databaseRuntimeSummary = @()
-$dockerStatusOutput = @(& docker info --format "{{.ServerVersion}}" 2>$null)
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Docker runtime verification is pending because the Docker engine is unavailable." -ForegroundColor Yellow
-    foreach ($databaseName in $expectedDatabaseNames) {
-        $databaseRuntimeSummary += [pscustomobject]@{ Database = $databaseName; Runtime = "Pending" }
-    }
-}
-else {
-    $containerStatus = @(& docker inspect --format "{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}" $containerName 2>$null)
-    if ($LASTEXITCODE -ne 0 -or $containerStatus.Count -eq 0) {
-        Write-Host "Docker is available, but the SQL Server container does not exist. Runtime verification is pending." -ForegroundColor Yellow
-        foreach ($databaseName in $expectedDatabaseNames) {
-            $databaseRuntimeSummary += [pscustomobject]@{ Database = $databaseName; Runtime = "Pending" }
+    if ($readiness.State -ne "Ready") {
+        Write-Host "Skipping $($target.Database): $($readiness.State) - $($readiness.Detail)" -ForegroundColor Yellow
+        $summary += [pscustomobject]@{
+            Database = $target.Database
+            Readiness = $readiness.State
+            Generation = "Skipped"
+            Output = ""
         }
+        continue
     }
-    elseif ($containerStatus[0] -ne "true|healthy") {
-        Write-Host "The SQL Server container is not running and healthy. Runtime verification is pending." -ForegroundColor Yellow
-        foreach ($databaseName in $expectedDatabaseNames) {
-            $databaseRuntimeSummary += [pscustomobject]@{ Database = $databaseName; Runtime = "Pending" }
+
+    $outputFile = Join-Path $outputDirectory "$($target.Database)_$timestamp.sql"
+    if ((Test-Path -LiteralPath $outputFile -PathType Leaf) -and -not $Overwrite) {
+        $generationFailure = $true
+        Write-Host "Refusing to overwrite '$outputFile'. Re-run with -Overwrite to replace this timestamped file." -ForegroundColor Red
+        $summary += [pscustomobject]@{
+            Database = $target.Database
+            Readiness = $readiness.State
+            Generation = "Failed"
+            Output = $outputFile
         }
+        continue
+    }
+
+    Write-Host "Generating an idempotent SQL script for $($target.Database)..." -ForegroundColor Green
+    $scriptResult = Invoke-EfCommand -Arguments @(
+        "migrations", "script",
+        "--idempotent",
+        "--output", $outputFile,
+        "--project", $target.Project,
+        "--startup-project", $target.Project,
+        "--context", $target.Context,
+        "--no-color",
+        "--",
+        "--environment", "Development"
+    )
+
+    if ($scriptResult.ExitCode -eq 0) {
+        $generationStatus = "Succeeded"
     }
     else {
-        # sqlcmd runs inside the container and reads the password only from the
-        # container environment. The command and credential are never echoed.
-        $queryCommand = '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -b -h -1 -W -Q "SET NOCOUNT ON; SELECT [name] FROM sys.databases WHERE [name] IN (''OnlineMarketDb'',''RecommendationDb'',''IntegrationDb'',''MockErpDb'') ORDER BY [name];"'
-        $queryOutput = @(& docker exec $containerName /bin/bash -c $queryCommand 2>$null)
-        if ($LASTEXITCODE -ne 0) {
-            $verificationFailure = $true
-            Write-Host "SQL Server connectivity verification failed inside the container. Credential details were suppressed." -ForegroundColor Red
-            foreach ($databaseName in $expectedDatabaseNames) {
-                $databaseRuntimeSummary += [pscustomobject]@{ Database = $databaseName; Runtime = "QueryFailed" }
-            }
-        }
-        else {
-            $foundDatabaseNames = @(
-                $queryOutput |
-                    ForEach-Object { "$_".Trim() } |
-                    Where-Object { $expectedDatabaseNames -contains $_ }
-            )
+        $generationFailure = $true
+        $generationStatus = "Failed"
+        Write-Host $scriptResult.Text -ForegroundColor Red
+    }
 
-            foreach ($databaseName in $expectedDatabaseNames) {
-                $runtimeState = if ($foundDatabaseNames -contains $databaseName) { "Present" } else { "Missing" }
-                $databaseRuntimeSummary += [pscustomobject]@{ Database = $databaseName; Runtime = $runtimeState }
-            }
-        }
+    $summary += [pscustomobject]@{
+        Database = $target.Database
+        Readiness = $readiness.State
+        Generation = $generationStatus
+        Output = $outputFile
     }
 }
 
-Write-Host "`nSQL Server project database summary:" -ForegroundColor Cyan
-$databaseRuntimeSummary | Format-Table -AutoSize
+Write-Host "`nSQL generation summary:" -ForegroundColor Cyan
+$summary | Format-Table -AutoSize
 
-if ($verificationFailure) {
-    Write-Error "Database verification found one or more failures."
+if ($generationFailure) {
+    Write-Error "One or more Ready database contexts failed SQL script generation."
     exit 1
 }

@@ -5,6 +5,7 @@
 
 # dotenv files
 .env
+deploy/.env
 
 # User-specific files
 *.rsuser
@@ -272,9 +273,11 @@ ServiceFabricBackup/
 *.rptproj.bak
 
 # SQL Server files
+*.bak
 *.mdf
 *.ldf
 *.ndf
+scripts/database/generated/
 
 # Business Intelligence projects
 *.rdl.data

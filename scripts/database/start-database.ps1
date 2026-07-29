@@ -1,26 +1,35 @@
-# PowerShell script to start SQL Server container
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$scriptDir = Split-Path -Path $MyInvocation.MyCommand.Definition -Parent
-$rootDir = Resolve-Path "$scriptDir/../.."
-$composeFile = "$rootDir/deploy/docker-compose.database.yml"
+$repositoryRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..\..")).Path
+$composeFile = (Resolve-Path -LiteralPath (Join-Path $repositoryRoot "deploy\docker-compose.database.yml")).Path
+$environmentFile = Join-Path $repositoryRoot "deploy\.env"
+$containerName = "online-market-sqlserver"
 
-Write-Host "Starting SQL Server 2022 development container..." -ForegroundColor Green
-docker compose -f $composeFile up -d
+if (-not (Test-Path -LiteralPath $environmentFile -PathType Leaf)) {
+    throw "Missing local environment file '$environmentFile'. Copy deploy/.env.example to deploy/.env and replace the non-production password placeholder."
+}
 
-Write-Host "Waiting for SQL Server to become healthy..." -ForegroundColor Yellow
-$healthy = $false
-for ($i = 1; $i -le 30; $i++) {
-    $status = docker inspect --format='{{json .State.Health.Status}}' online-market-sqlserver 2>$null
-    if ($status -eq '"healthy"') {
-        $healthy = $true
+Write-Host "Starting the pinned SQL Server 2022 development container..." -ForegroundColor Green
+& docker compose --env-file $environmentFile -f $composeFile up -d
+if ($LASTEXITCODE -ne 0) {
+    throw "Docker Compose could not start the SQL Server development container."
+}
+
+Write-Host "Waiting up to 60 seconds for the container health check..." -ForegroundColor Yellow
+$isHealthy = $false
+for ($attempt = 1; $attempt -le 30; $attempt++) {
+    $healthStatus = & docker inspect --format "{{.State.Health.Status}}" $containerName 2>$null
+    if ($LASTEXITCODE -eq 0 -and $healthStatus -eq "healthy") {
+        $isHealthy = $true
         break
     }
+
     Start-Sleep -Seconds 2
 }
 
-if ($healthy) {
-    Write-Host "SQL Server container is running and healthy!" -ForegroundColor Green
-} else {
-    Write-Host "Warning: SQL Server container health check did not complete in time." -ForegroundColor Red
+if (-not $isHealthy) {
+    throw "The SQL Server container did not become healthy within 60 seconds. Inspect it with 'docker inspect $containerName'."
 }
+
+Write-Host "SQL Server is running and healthy." -ForegroundColor Green
