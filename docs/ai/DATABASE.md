@@ -1789,7 +1789,7 @@ Account-coded debit/credit lines belonging to an ERP accounting voucher.
 
 **Behavioural rules**
 
-Create exactly these three V1 lines:
+Create these V1 lines:
 
 1. Sequence 1, account `120` (`Customers/Receivables`):
    `DebitAmount = GrandTotal`, `CreditAmount = 0`,
@@ -1797,9 +1797,12 @@ Create exactly these three V1 lines:
 2. Sequence 2, account `600` (`Domestic Sales`):
    `DebitAmount = 0`, `CreditAmount = Subtotal`,
    `ErpCustomerId` is null.
-3. Sequence 3, account `391` (`VAT Payable`):
+3. When `VatTotal > 0`, sequence 3, account `391` (`VAT Payable`):
    `DebitAmount = 0`, `CreditAmount = VatTotal`,
    `ErpCustomerId` is null.
+
+Accounts `120` and `600` are mandatory. Account `391` is conditional and must
+be omitted when `VatTotal = 0`; no zero-value accounting line is persisted.
 
 The accounting-entry application service must verify:
 
@@ -1989,7 +1992,7 @@ One transaction:
 4. For a new request, create/update the ERP business resource.
 5. For CreateOrder, persist the order header, lines, delivery-address
    snapshot, and payment method together.
-6. For CreateAccountingEntry, persist the voucher header and all three
+6. For CreateAccountingEntry, persist the voucher header and all applicable
    account-coded lines together.
 7. Insert ErpIdempotencyRecord.
 8. Commit.
@@ -2102,7 +2105,8 @@ SQL Server must guarantee:
 - one immutable delivery-address snapshot per Mock ERP order,
 - one stock movement per market order/product,
 - one accounting entry per order,
-- exactly one accounting line per V1 account code (`120`, `600`, `391`),
+- exactly one accounting line for mandatory V1 account codes `120` and `600`,
+  plus one `391` line only when `VatTotal > 0`,
 - direct ERP customer reference on the voucher and account `120` line,
 - balanced accounting header and line debit/credit totals,
 - one stored result per idempotency key.
@@ -2487,7 +2491,9 @@ Required:
 - same order/product creates one stock movement,
 - one accounting entry per order,
 - accounting entry has a direct ErpCustomerId,
-- accounting entry creates exactly accounts 120, 600, and 391,
+- accounting entry always creates accounts 120 and 600, and creates account
+  391 only when VatTotal is positive,
+- zero-VAT accounting entries omit account 391 and contain no zero-value line,
 - account 120 line has the direct customer reference,
 - header totals equal line sums,
 - debit equals credit,
@@ -2627,7 +2633,8 @@ A database foundation PR cannot be merged until all items are true:
 - [ ] Market and ERP stock balances are separate.
 - [ ] ERP order stores payment method and an immutable delivery address.
 - [ ] ERP stock stores unit type, net content, and reorder level.
-- [ ] ERP accounting has direct customer references and accounts 120/600/391.
+- [ ] ERP accounting has direct customer references, mandatory accounts
+  120/600, and conditional account 391 for positive VAT.
 - [ ] Checkout atomicity is integration-tested.
 - [ ] Outbox and worker claims are concurrency-tested.
 - [ ] Recommendation event ordering/idempotency is tested.

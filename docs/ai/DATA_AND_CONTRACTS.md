@@ -236,14 +236,16 @@ One accounting voucher is created per ERP order. It contains:
 - total debit and total credit,
 - currency.
 
-It contains exactly these V1 project lines:
+It contains these V1 project lines:
 
 ```text
 120 Customers/Receivables  Debit  = GrandTotal
 600 Domestic Sales        Credit = Subtotal
-391 VAT Payable           Credit = VatTotal
+391 VAT Payable           Credit = VatTotal, only when VatTotal > 0
 ```
 
+Accounts `120` and `600` are always created. Account `391` is created only
+when `VatTotal` is positive; a zero-value accounting line is never created.
 The sum of debit lines must equal the sum of credit lines. This is a project
 simulation, not a legal accounting or real Uyumsoft contract.
 
