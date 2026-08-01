@@ -37,7 +37,8 @@ public record CategoryDto(
     string Name,
     string Slug,
     int DisplayOrder,
-    Guid? ParentCategoryId
+    Guid? ParentCategoryId,
+    List<CategoryDto>? SubCategories = null
 );
 
 public record BrandDto(

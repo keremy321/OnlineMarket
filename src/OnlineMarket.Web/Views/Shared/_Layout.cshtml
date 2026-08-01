@@ -1,6 +1,7 @@
 @using OnlineMarket.Web.Application.Interfaces
 @inject ICartService CartService
 @inject IAuthService AuthService
+@inject ICatalogService CatalogService
 
 @{
     int cartCount = 0;
@@ -13,6 +14,8 @@
             cartCount = cart.Items.Sum(i => i.Quantity);
         }
     }
+    var navCategories = await CatalogService.GetCategoriesAsync();
+    var navParentCategories = navCategories.Where(c => c.ParentCategoryId == null).ToList();
 }
 
 <!DOCTYPE html>
@@ -27,6 +30,7 @@
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.2/font/bootstrap-icons.min.css" />
     <link rel="stylesheet" href="~/css/site.css" />
+    <link rel="stylesheet" href="~/css/ai-widget.css" />
 </head>
 <body>
     <!-- Top Announcement Bar -->
@@ -102,11 +106,47 @@
             <div class="container d-flex align-items-center gap-3 overflow-x-auto py-1 scrollbar-hidden">
                 <a asp-controller="Home" asp-action="Index" class="nav-sublink active"><i class="bi bi-house-door-fill me-1"></i> Ana Sayfa</a>
                 <a asp-controller="Catalog" asp-action="Index" class="nav-sublink"><i class="bi bi-grid-fill me-1"></i> Tüm Ürünler</a>
-                <a asp-controller="Catalog" asp-action="Index" asp-route-searchQuery="Meyve" class="nav-sublink"><i class="bi bi-apple me-1 text-danger"></i> Meyve & Sebze</a>
-                <a asp-controller="Catalog" asp-action="Index" asp-route-searchQuery="Süt" class="nav-sublink"><i class="bi bi-cup-hot-fill me-1 text-primary"></i> Süt & Kahvaltılık</a>
-                <a asp-controller="Catalog" asp-action="Index" asp-route-searchQuery="Pirinç" class="nav-sublink"><i class="bi bi-box-seam-fill me-1 text-warning"></i> Temel Gıda</a>
-                <a asp-controller="Catalog" asp-action="Index" asp-route-searchQuery="Maden Suyu" class="nav-sublink"><i class="bi bi-water me-1 text-info"></i> İçecekler</a>
-                <a asp-controller="Home" asp-action="Index" asp-fragment="recommendations" class="nav-sublink text-primary font-weight-bold"><i class="bi bi-stars me-1"></i> Sana Özel Öneriler</a>
+
+                @foreach (var pCat in navParentCategories)
+                {
+                    <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@pCat.Id" class="nav-sublink">
+                        @if (pCat.Name.Contains("Gıda"))
+                        {
+                            <i class="bi bi-basket2-fill me-1 text-success"></i>
+                        }
+                        else if (pCat.Name.Contains("İçecek"))
+                        {
+                            <i class="bi bi-cup-straw me-1 text-primary"></i>
+                        }
+                        else if (pCat.Name.Contains("Atıştırmalık"))
+                        {
+                            <i class="bi bi-cookie me-1 text-warning"></i>
+                        }
+                        else if (pCat.Name.Contains("Temizlik"))
+                        {
+                            <i class="bi bi-stars me-1 text-info"></i>
+                        }
+                        else if (pCat.Name.Contains("Bebek"))
+                        {
+                            <i class="bi bi-emoji-smile-fill me-1 text-danger"></i>
+                        }
+                        else if (pCat.Name.Contains("Fırın"))
+                        {
+                            <i class="bi bi-cake2-fill me-1 text-warning"></i>
+                        }
+                        else if (pCat.Name.Contains("Şarküteri"))
+                        {
+                            <i class="bi bi-egg-fried me-1 text-danger"></i>
+                        }
+                        else
+                        {
+                            <i class="bi bi-tag-fill me-1 text-secondary"></i>
+                        }
+                        @pCat.Name
+                    </a>
+                }
+
+                <a asp-controller="Home" asp-action="Index" asp-fragment="recommendations" class="nav-sublink text-primary font-weight-bold ms-auto"><i class="bi bi-stars me-1"></i> Sana Özel Öneriler</a>
             </div>
         </nav>
     </header>
@@ -190,7 +230,9 @@
         </div>
     </footer>
 
+    @await Html.PartialAsync("_AiSupportWidget")
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/ai-chat.js"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

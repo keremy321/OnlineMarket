@@ -59,44 +59,85 @@
     <section class="mb-5">
         <div class="d-flex align-items-center justify-content-between mb-4">
             <div>
-                <h3 class="fw-extrabold mb-1 text-dark">Popüler Kategoriler</h3>
-                <p class="text-secondary small mb-0">Market ihtiyaçlarınıza göre kategorilere göz atın</p>
+                <h3 class="fw-extrabold mb-1 text-dark">Kategoriler</h3>
+                <p class="text-secondary small mb-0">Market ihtiyaçlarınıza göre ana kategorilere ve alt ürün gruplarına göz atın</p>
             </div>
             <a asp-controller="Catalog" asp-action="Index" class="btn btn-sm btn-outline-primary rounded-pill px-3 font-weight-bold">
-                Tüm Kategoriler <i class="bi bi-arrow-right ms-1"></i>
+                Tüm Kataloğu İncele <i class="bi bi-arrow-right ms-1"></i>
             </a>
         </div>
 
-        <div class="row g-3">
-            @foreach (var cat in Model.Categories)
+        <div class="row g-4">
+            @foreach (var cat in Model.Categories.Where(c => c.ParentCategoryId == null))
             {
-                <div class="col-6 col-md-4 col-lg-2">
-                    <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@cat.Id" class="category-card h-100">
-                        <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-3 d-inline-flex align-items-center justify-content-center mb-2" style="width: 54px; height: 54px;">
-                            @if (cat.Name.Contains("Meyve") || cat.Name.Contains("Sebze"))
+                <div class="col-12 col-md-6 col-lg-4">
+                    <div class="card-custom h-100 p-4 bg-white border-0 shadow-sm rounded-4 d-flex flex-column transition-all">
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <div class="bg-success bg-opacity-10 text-success rounded-circle p-3 d-flex align-items-center justify-content-center flex-shrink-0" style="width: 56px; height: 56px;">
+                                @if (cat.Name.Contains("Gıda") || cat.Name.Contains("Temel"))
+                                {
+                                    <i class="bi bi-basket2-fill fs-3 text-success"></i>
+                                }
+                                else if (cat.Name.Contains("İçecek"))
+                                {
+                                    <i class="bi bi-cup-straw fs-3 text-primary"></i>
+                                }
+                                else if (cat.Name.Contains("Atıştırmalık"))
+                                {
+                                    <i class="bi bi-cookie fs-3 text-warning"></i>
+                                }
+                                else if (cat.Name.Contains("Temizlik"))
+                                {
+                                    <i class="bi bi-stars fs-3 text-info"></i>
+                                }
+                                else if (cat.Name.Contains("Bebek"))
+                                {
+                                    <i class="bi bi-emoji-smile-fill fs-3 text-danger"></i>
+                                }
+                                else if (cat.Name.Contains("Fırın"))
+                                {
+                                    <i class="bi bi-cake2-fill fs-3 text-warning"></i>
+                                }
+                                else if (cat.Name.Contains("Şarküteri"))
+                                {
+                                    <i class="bi bi-egg-fried fs-3 text-danger"></i>
+                                }
+                                else
+                                {
+                                    <i class="bi bi-grid-fill fs-3 text-success"></i>
+                                }
+                            </div>
+                            <div class="overflow-hidden">
+                                <h5 class="fw-bold mb-0 text-dark text-truncate">
+                                    <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@cat.Id" class="text-dark text-decoration-none hv-primary">@cat.Name</a>
+                                </h5>
+                                <span class="text-secondary small">@(cat.SubCategories?.Count ?? 0) Alt Kategori</span>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-wrap gap-2 mb-3">
+                            @if (cat.SubCategories != null && cat.SubCategories.Any())
                             {
-                                <i class="bi bi-apple fs-3 text-danger"></i>
-                            }
-                            else if (cat.Name.Contains("Süt") || cat.Name.Contains("Kahvaltılık"))
-                            {
-                                <i class="bi bi-cup-hot-fill fs-3 text-primary"></i>
-                            }
-                            else if (cat.Name.Contains("Gıda") || cat.Name.Contains("Temel"))
-                            {
-                                <i class="bi bi-box-seam-fill fs-3 text-warning"></i>
-                            }
-                            else if (cat.Name.Contains("İçecek"))
-                            {
-                                <i class="bi bi-water fs-3 text-info"></i>
+                                @foreach (var sub in cat.SubCategories)
+                                {
+                                    <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@sub.Id" class="badge bg-light text-dark border border-secondary-subtle px-3 py-2 rounded-pill fw-semibold text-decoration-none hover-shadow">
+                                        <i class="bi bi-tag-fill me-1 text-success extra-small"></i>@sub.Name
+                                    </a>
+                                }
                             }
                             else
                             {
-                                <i class="bi bi-grid-3x3-gap-fill fs-3 text-success"></i>
+                                <span class="text-muted extra-small">Tüm ürünler ana kategoride</span>
                             }
                         </div>
-                        <h6 class="fw-bold mb-1 text-truncate">@cat.Name</h6>
-                        <span class="text-secondary extra-small">Kategoriye Git</span>
-                    </a>
+
+                        <div class="mt-auto pt-3 border-top d-flex align-items-center justify-content-between">
+                            <span class="text-secondary extra-small font-weight-bold">Ana Kategori</span>
+                            <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@cat.Id" class="btn btn-sm btn-outline-success rounded-pill px-3 font-weight-bold">
+                                Tümünü Gör <i class="bi bi-chevron-right ms-1"></i>
+                            </a>
+                        </div>
+                    </div>
                 </div>
             }
         </div>

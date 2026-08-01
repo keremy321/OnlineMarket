@@ -23,18 +23,34 @@ public sealed class CatalogService : ICatalogService
 
     public async Task<List<CategoryDto>> GetCategoriesAsync()
     {
-        var categories = await _dbContext.Categories
+        var allCategories = await _dbContext.Categories
             .Where(category => category.IsActive)
             .OrderBy(category => category.DisplayOrder)
             .ThenBy(category => category.Name)
             .ToListAsync();
 
-        return categories.Select(category => new CategoryDto(
-            category.Id,
-            category.Name,
-            category.Slug,
-            category.DisplayOrder,
-            category.ParentCategoryId)).ToList();
+        var parentCategories = allCategories
+            .Where(c => c.ParentCategoryId == null)
+            .ToList();
+
+        var result = new List<CategoryDto>();
+        foreach (var parent in parentCategories)
+        {
+            var subs = allCategories
+                .Where(c => c.ParentCategoryId == parent.Id)
+                .Select(c => new CategoryDto(c.Id, c.Name, c.Slug, c.DisplayOrder, c.ParentCategoryId))
+                .ToList();
+
+            result.Add(new CategoryDto(
+                parent.Id,
+                parent.Name,
+                parent.Slug,
+                parent.DisplayOrder,
+                parent.ParentCategoryId,
+                subs));
+        }
+
+        return result;
     }
 
     public async Task<List<BrandDto>> GetBrandsAsync()
@@ -60,7 +76,21 @@ public sealed class CatalogService : ICatalogService
 
         if (filter.CategoryId.HasValue)
         {
-            query = query.Where(product => product.CategoryId == filter.CategoryId.Value);
+            var targetId = filter.CategoryId.Value;
+            var childIds = await _dbContext.Categories
+                .Where(c => c.ParentCategoryId == targetId)
+                .Select(c => c.Id)
+                .ToListAsync();
+
+            if (childIds.Count > 0)
+            {
+                childIds.Add(targetId);
+                query = query.Where(product => childIds.Contains(product.CategoryId));
+            }
+            else
+            {
+                query = query.Where(product => product.CategoryId == targetId);
+            }
         }
 
         if (filter.BrandId.HasValue)
