@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using OnlineMarket.Web.Application.Interfaces;
+using OnlineMarket.Web.Application.Options;
 using OnlineMarket.Web.Application.Services;
 using OnlineMarket.Web.Domain.Entities;
 using OnlineMarket.Web.Infrastructure.Http;
@@ -13,12 +14,19 @@ var seedDevelopmentData = args.Contains(
 var builder = WebApplication.CreateBuilder(args);
 
 // Add DbContext
-var connectionString = builder.Configuration.GetConnectionString("OnlineMarketDb")
-    ?? throw new InvalidOperationException(
-        "ConnectionStrings:OnlineMarketDb must be supplied through approved configuration.");
+var connectionString = builder.Configuration.GetConnectionString("OnlineMarketDb");
 
 builder.Services.AddDbContext<OnlineMarketDbContext>(options =>
-    options.UseSqlServer(connectionString));
+{
+    if (string.IsNullOrWhiteSpace(connectionString) || string.Equals(connectionString, "InMemory", StringComparison.OrdinalIgnoreCase))
+    {
+        options.UseInMemoryDatabase("OnlineMarketDb");
+    }
+    else
+    {
+        options.UseSqlServer(connectionString);
+    }
+});
 
 // Add Identity
 builder.Services.AddIdentity<ApplicationUser, IdentityRole<Guid>>(options =>
@@ -50,12 +58,21 @@ builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<ICheckoutService, CheckoutService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IAdminQueryService, AdminQueryService>();
+builder.Services.AddScoped<IAiSupportService, AiSupportService>();
 builder.Services.AddScoped<IOutboxService, OutboxService>();
 builder.Services.AddScoped<IStockMutationService, SqlServerStockMutationService>();
 builder.Services.AddScoped<IOrderNumberGenerator, SqlServerOrderNumberGenerator>();
 builder.Services.AddScoped<IOutboxStore, SqlServerOutboxStore>();
 builder.Services.AddScoped<IOutboxDispatcher, HttpOutboxDispatcher>();
 builder.Services.AddScoped<DatabaseSeeder>();
+
+// Configure AI Assistant Options & API Client
+builder.Services.Configure<AiAssistantOptions>(builder.Configuration.GetSection(AiAssistantOptions.SectionName));
+var aiTimeoutSeconds = builder.Configuration.GetValue<int>("AiAssistant:TimeoutSeconds", 10);
+builder.Services.AddHttpClient<IAiApiClient, ExternalAiApiClient>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(aiTimeoutSeconds);
+});
 
 // Configure HTTP Clients for External Services with Short Timeouts
 var recommendationApiUrl = builder.Configuration["Services:RecommendationApi"] ?? "http://localhost:5001";
@@ -138,5 +155,22 @@ app.UseAuthorization();
 app.MapControllerRoute(
     name: "default",
     pattern: "{controller=Home}/{action=Index}/{id?}");
+
+// Auto-seed InMemory database for local preview
+using (var scope = app.Services.CreateScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<OnlineMarketDbContext>();
+    if (dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
+    {
+        dbContext.Database.EnsureCreated();
+        var catalogSeedPath = Path.Combine(AppContext.BaseDirectory, "Seed", "catalog.v1.json");
+        if (File.Exists(catalogSeedPath))
+        {
+            var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
+            var credentials = new SeedAdminCredentials("admin@onlinemarket.com", "Admin123!");
+            await seeder.SeedAsync(catalogSeedPath, credentials);
+        }
+    }
+}
 
 app.Run();

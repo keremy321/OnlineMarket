@@ -53,9 +53,18 @@
                     <label class="form-label fw-semibold text-secondary small">Kategori</label>
                     <select name="categoryId" class="form-select rounded-3">
                         <option value="">Tüm Kategoriler</option>
-                        @foreach (var cat in Model.Categories)
+                        @foreach (var parent in Model.Categories.Where(c => c.ParentCategoryId == null))
                         {
-                            <option value="@cat.Id" selected="@(Model.SelectedCategoryId == cat.Id)">@cat.Name</option>
+                            <option value="@parent.Id" selected="@(Model.SelectedCategoryId == parent.Id)" class="fw-bold">📁 @parent.Name (Ana Kategori)</option>
+                            if (parent.SubCategories != null && parent.SubCategories.Any())
+                            {
+                                <optgroup label="── @parent.Name Alt Kategorileri">
+                                    @foreach (var sub in parent.SubCategories)
+                                    {
+                                        <option value="@sub.Id" selected="@(Model.SelectedCategoryId == sub.Id)">└─ @sub.Name</option>
+                                    }
+                                </optgroup>
+                            }
                         }
                     </select>
                 </div>

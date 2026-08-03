@@ -129,8 +129,8 @@ public sealed class DatabaseSeeder
         CancellationToken cancellationToken)
     {
         var now = DateTime.UtcNow;
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(
-            cancellationToken);
+        var isRelational = _dbContext.Database.IsRelational();
+        var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
 
         var existingCategories = await _dbContext.Categories
             .ToDictionaryAsync(category => category.Id, cancellationToken);
@@ -144,10 +144,11 @@ public sealed class DatabaseSeeder
                 continue;
             }
 
-            if (categorySlugs.TryGetValue(seed.Slug, out var conflictingCategory))
+            var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
+
+            if (categorySlugs.TryGetValue(effectiveSlug, out var conflictingCategory) && conflictingCategory.Id != seed.Id)
             {
-                throw new InvalidOperationException(
-                    $"Canonical category '{seed.Slug}' conflicts with category {conflictingCategory.Id}.");
+                effectiveSlug = $"{effectiveSlug}-{seed.Id.ToString("N")[..6]}";
             }
 
             var category = new Category
@@ -155,7 +156,7 @@ public sealed class DatabaseSeeder
                 Id = seed.Id,
                 ParentCategoryId = seed.ParentCategoryId,
                 Name = seed.Name,
-                Slug = seed.Slug,
+                Slug = effectiveSlug,
                 DisplayOrder = seed.DisplayOrder,
                 IsActive = true,
                 CreatedAtUtc = now,
@@ -163,7 +164,7 @@ public sealed class DatabaseSeeder
             };
             _dbContext.Categories.Add(category);
             existingCategories.Add(category.Id, category);
-            categorySlugs.Add(category.Slug, category);
+            categorySlugs[category.Slug] = category;
         }
 
         var existingBrands = await _dbContext.Brands
@@ -178,24 +179,25 @@ public sealed class DatabaseSeeder
                 continue;
             }
 
-            if (brandSlugs.TryGetValue(seed.Slug, out var conflictingBrand))
+            var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
+
+            if (brandSlugs.TryGetValue(effectiveSlug, out var conflictingBrand) && conflictingBrand.Id != seed.Id)
             {
-                throw new InvalidOperationException(
-                    $"Canonical brand '{seed.Slug}' conflicts with brand {conflictingBrand.Id}.");
+                effectiveSlug = $"{effectiveSlug}-{seed.Id.ToString("N")[..6]}";
             }
 
             var brand = new Brand
             {
                 Id = seed.Id,
                 Name = seed.Name,
-                Slug = seed.Slug,
+                Slug = effectiveSlug,
                 IsActive = true,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now
             };
             _dbContext.Brands.Add(brand);
             existingBrands.Add(brand.Id, brand);
-            brandSlugs.Add(brand.Slug, brand);
+            brandSlugs[brand.Slug] = brand;
         }
 
         var existingProducts = await _dbContext.Products
@@ -217,18 +219,19 @@ public sealed class DatabaseSeeder
                     $"Canonical product '{seed.Sku}' references an unknown category or brand.");
             }
 
+            var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
+
             if (!existingProducts.TryGetValue(seed.Id, out var product))
             {
-                if (productsBySku.TryGetValue(seed.Sku, out var skuConflict))
+                if (productsBySku.TryGetValue(seed.Sku, out var skuConflict) && skuConflict.Id != seed.Id)
                 {
                     throw new InvalidOperationException(
                         $"Canonical SKU '{seed.Sku}' conflicts with product {skuConflict.Id}.");
                 }
 
-                if (productsBySlug.TryGetValue(seed.Slug, out var slugConflict))
+                if (productsBySlug.TryGetValue(effectiveSlug, out var slugConflict) && slugConflict.Id != seed.Id)
                 {
-                    throw new InvalidOperationException(
-                        $"Canonical product slug '{seed.Slug}' conflicts with product {slugConflict.Id}.");
+                    effectiveSlug = $"{effectiveSlug}-{seed.Id.ToString("N")[..6]}";
                 }
 
                 product = new Product
@@ -236,7 +239,7 @@ public sealed class DatabaseSeeder
                     Id = seed.Id,
                     Sku = seed.Sku,
                     Name = seed.Name,
-                    Slug = seed.Slug,
+                    Slug = effectiveSlug,
                     Description = seed.Description,
                     CategoryId = seed.CategoryId,
                     BrandId = seed.BrandId,
@@ -251,8 +254,8 @@ public sealed class DatabaseSeeder
                 };
                 _dbContext.Products.Add(product);
                 existingProducts.Add(product.Id, product);
-                productsBySku.Add(product.Sku, product);
-                productsBySlug.Add(product.Slug, product);
+                productsBySku[product.Sku] = product;
+                productsBySlug[product.Slug] = product;
             }
 
             if (existingStockProductIds.Contains(seed.Id))
@@ -287,7 +290,29 @@ public sealed class DatabaseSeeder
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+        if (transaction != null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            await transaction.DisposeAsync();
+        }
+    }
+
+    private static string GenerateSlug(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return Guid.NewGuid().ToString("N");
+        var normalized = text.ToLowerInvariant()
+            .Replace("ç", "c")
+            .Replace("ğ", "g")
+            .Replace("ı", "i")
+            .Replace("ö", "o")
+            .Replace("ş", "s")
+            .Replace("ü", "u")
+            .Replace("I", "i")
+            .Replace("İ", "i")
+            .Replace("&", "ve");
+        var invalidCharsRemoved = System.Text.RegularExpressions.Regex.Replace(normalized, @"[^a-z0-9\s-]", "");
+        var spacesToDash = System.Text.RegularExpressions.Regex.Replace(invalidCharsRemoved, @"\s+", "-").Trim('-');
+        return string.IsNullOrWhiteSpace(spacesToDash) ? Guid.NewGuid().ToString("N") : spacesToDash;
     }
 
     private static void ThrowIfFailed(
@@ -312,19 +337,19 @@ public sealed class DatabaseSeeder
         Guid Id,
         Guid? ParentCategoryId,
         string Name,
-        string Slug,
+        string? Slug,
         int DisplayOrder);
 
     private sealed record BrandSeed(
         Guid Id,
         string Name,
-        string Slug);
+        string? Slug);
 
     private sealed record ProductSeed(
         Guid Id,
         string Sku,
         string Name,
-        string Slug,
+        string? Slug,
         string? Description,
         Guid CategoryId,
         Guid BrandId,
