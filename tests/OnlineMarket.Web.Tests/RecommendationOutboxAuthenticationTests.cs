@@ -42,6 +42,29 @@ public sealed class RecommendationOutboxAuthenticationTests(
     }
 
     [Fact]
+    public async Task Frequently_bought_together_query_uses_the_authenticated_api_route()
+    {
+        var productId = Guid.NewGuid();
+        var recorder = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(Array.Empty<RecommendationItemDto>())
+        });
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var logs = new CapturingLogger<RecommendationApiClient>();
+        var client = new RecommendationApiClient(httpClient, logs);
+
+        var recommendations = await client.GetFrequentlyBoughtTogetherAsync(productId, 4);
+
+        Assert.Empty(recommendations);
+        Assert.Equal($"/api/v1/recommendations/fbt/{productId}", recorder.RequestPath);
+        Assert.Equal("?limit=4", recorder.RequestQuery);
+        Assert.Equal(ApiKey, recorder.ApiKey);
+        Assert.DoesNotContain(
+            logs.Entries,
+            entry => entry.Contains(ApiKey, StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task Product_delivery_includes_recommendation_api_key()
     {
         var recorder = new RecordingHandler();

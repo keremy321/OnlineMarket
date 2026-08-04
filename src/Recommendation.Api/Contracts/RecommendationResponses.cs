@@ -14,6 +14,20 @@ public sealed record PopularityMetricsResponse(
     DateTime WindowStartUtc,
     DateTime WindowEndUtc);
 
+public sealed record FrequentlyBoughtTogetherRecommendationResponse(
+    Guid ProductId,
+    decimal Score,
+    string RecommendationType,
+    string ReasonCode,
+    string ReasonText,
+    AssociationMetricsResponse? Metrics);
+
+public sealed record AssociationMetricsResponse(
+    int PairOrderCount,
+    decimal Support,
+    decimal Confidence,
+    decimal Lift);
+
 public sealed record RecommendationRecalculationResponse(
     Guid RunId,
     string Status,

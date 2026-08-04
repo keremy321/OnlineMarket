@@ -34,6 +34,12 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IPopularityRecommendationService,
     PopularityRecommendationService>();
+builder.Services.AddScoped<
+    IFrequentlyBoughtTogetherRecommendationStore,
+    SqlServerFrequentlyBoughtTogetherRecommendationStore>();
+builder.Services.AddScoped<
+    IFrequentlyBoughtTogetherRecommendationService,
+    FrequentlyBoughtTogetherRecommendationService>();
 builder.Services.AddSingleton<RecommendationEventValidator>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services
@@ -43,6 +49,14 @@ builder.Services
     .Validate(
         options => options.IsValid(),
         $"Configuration section '{PopularityRecommendationOptions.SectionName}' is invalid.")
+    .ValidateOnStart();
+builder.Services
+    .AddOptions<FrequentlyBoughtTogetherOptions>()
+    .Bind(builder.Configuration.GetSection(
+        FrequentlyBoughtTogetherOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        $"Configuration section '{FrequentlyBoughtTogetherOptions.SectionName}' is invalid.")
     .ValidateOnStart();
 builder.Services
     .AddAuthentication(ApiKeyDefaults.Scheme)
