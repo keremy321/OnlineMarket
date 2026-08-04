@@ -157,6 +157,108 @@ public sealed class IntegrationWorkerSqlServerTests(
     }
 
     [Fact]
+    public async Task Circuit_open_releases_claim_without_consuming_an_attempt()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        await IntegrationWorkerTestSupport.AcceptAsync(
+            database,
+            IntegrationApiTestData.CreateValidRequest());
+        var client = new RecordingMockErpClient((step, callNumber) =>
+            callNumber == 1
+                ? IntegrationWorkerTestSupport.CircuitOpen(step)
+                : IntegrationWorkerTestSupport.Success(step));
+
+        await using (var openContext = database.CreateContext())
+        {
+            Assert.True(await IntegrationWorkerTestSupport
+                .CreateProcessor(openContext, client)
+                .ProcessNextAsync("circuit-open-worker"));
+        }
+
+        await using (var deferredContext = database.CreateContext())
+        {
+            var deferredStep = await deferredContext.IntegrationSteps
+                .AsNoTracking()
+                .SingleAsync(step =>
+                    step.StepType == IntegrationStepType.EnsureCustomer);
+            Assert.Equal(0, deferredStep.AttemptCount);
+            Assert.Equal(IntegrationStepStatus.Retrying, deferredStep.Status);
+            Assert.Equal(
+                "MockErp.CircuitOpen",
+                deferredStep.LastErrorCode);
+            Assert.Equal(
+                0,
+                await deferredContext.IntegrationAttempts.CountAsync());
+        }
+
+        await using (var recoveryContext = database.CreateContext())
+        {
+            Assert.True(await IntegrationWorkerTestSupport
+                .CreateProcessor(recoveryContext, client)
+                .ProcessNextAsync("circuit-recovery-worker"));
+        }
+
+        await using var verification = database.CreateContext();
+        var recoveredStep = await verification.IntegrationSteps
+            .AsNoTracking()
+            .SingleAsync(step =>
+                step.StepType == IntegrationStepType.EnsureCustomer);
+        var attempt = await verification.IntegrationAttempts
+            .AsNoTracking()
+            .SingleAsync();
+        Assert.Equal(1, recoveredStep.AttemptCount);
+        Assert.Equal(IntegrationStepStatus.Succeeded, recoveredStep.Status);
+        Assert.Equal(1, attempt.AttemptNumber);
+        Assert.Equal(2, client.Calls.Count);
+    }
+
+    [Fact]
+    public async Task Rate_limit_is_durably_retried_with_bounded_jittered_delay()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        await IntegrationWorkerTestSupport.AcceptAsync(
+            database,
+            IntegrationApiTestData.CreateValidRequest());
+        var client = new RecordingMockErpClient(
+            (step, _) => IntegrationWorkerTestSupport.RateLimited(step));
+        var workerOptions = new IntegrationWorkerOptions
+        {
+            PollInterval = TimeSpan.FromSeconds(3),
+            LockTimeout = TimeSpan.FromSeconds(5),
+            BaseRetryDelay = TimeSpan.FromSeconds(10),
+            MaxRetryDelay = TimeSpan.FromMinutes(1),
+            ClaimBatchSize = 2,
+            MaximumParallelism = 2
+        };
+        var beforeExecutionUtc = DateTime.UtcNow;
+
+        await using (var context = database.CreateContext())
+        {
+            var processor = IntegrationWorkerTestSupport.CreateProcessor(
+                context,
+                client,
+                workerOptions);
+            Assert.True(await processor.ProcessNextAsync("rate-limit-worker"));
+            Assert.False(await processor.ProcessNextAsync("rate-limit-worker"));
+        }
+
+        await using var verification = database.CreateContext();
+        var step = await verification.IntegrationSteps
+            .AsNoTracking()
+            .SingleAsync(item =>
+                item.StepType == IntegrationStepType.EnsureCustomer);
+        Assert.Equal(IntegrationStepStatus.Retrying, step.Status);
+        Assert.Equal(1, step.AttemptCount);
+        Assert.NotNull(step.NextAttemptAtUtc);
+        Assert.InRange(
+            step.NextAttemptAtUtc!.Value,
+            beforeExecutionUtc.AddSeconds(10),
+            beforeExecutionUtc.AddSeconds(13));
+        Assert.Single(client.Calls);
+        Assert.Single(await verification.IntegrationAttempts.ToListAsync());
+    }
+
+    [Fact]
     public async Task Permanent_failure_is_not_retried()
     {
         await using var database = await fixture.CreateDatabaseAsync();

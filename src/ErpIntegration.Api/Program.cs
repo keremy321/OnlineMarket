@@ -24,7 +24,9 @@ builder.Services.AddDbContext<IntegrationDbContext>((services, options) =>
 builder.Services.AddScoped<IIntegrationOrderStore, SqlServerIntegrationOrderStore>();
 builder.Services.AddScoped<IIntegrationStepStore, SqlServerIntegrationStepStore>();
 builder.Services.AddScoped<IIntegrationOrderService, IntegrationOrderService>();
-builder.Services.AddScoped<IntegrationStepProcessor>();
+builder.Services.AddScoped<
+    IIntegrationStepProcessor,
+    IntegrationStepProcessor>();
 builder.Services.AddScoped<IntegrationRetryPolicy>();
 builder.Services.AddSingleton<OrderReadyForErpV1Validator>();
 builder.Services.AddSingleton(TimeProvider.System);

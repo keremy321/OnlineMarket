@@ -14,7 +14,8 @@ namespace Recommendation.Api.Controllers;
 [Route("api/v1/recommendations")]
 public sealed class RecommendationsController(
     IPopularityRecommendationService popularityService,
-    IFrequentlyBoughtTogetherRecommendationService fbtService)
+    IFrequentlyBoughtTogetherRecommendationService fbtService,
+    ICartCompletionRecommendationService cartCompletionService)
     : ControllerBase
 {
     [HttpGet("popular")]
@@ -46,6 +47,22 @@ public sealed class RecommendationsController(
             limit,
             cancellationToken);
         return Ok(items.Select(MapFbtRecommendation).ToArray());
+    }
+
+    [HttpPost("cart")]
+    [ProducesResponseType<
+        IReadOnlyList<CartCompletionRecommendationResponse>>(
+        StatusCodes.Status200OK)]
+    public async Task<ActionResult<
+        IReadOnlyList<CartCompletionRecommendationResponse>>> GetCartCompletion(
+            [FromBody] CartCompletionRecommendationRequest request,
+            CancellationToken cancellationToken)
+    {
+        var items = await cartCompletionService.GetAsync(
+            request.ProductIds!,
+            request.Limit,
+            cancellationToken);
+        return Ok(items.Select(MapCartCompletionRecommendation).ToArray());
     }
 
     [HttpPost("recalculate")]
@@ -126,6 +143,21 @@ public sealed class RecommendationsController(
             new AssociationMetricsResponse(
                 item.PairOrderCount,
                 item.Support,
+                item.Confidence,
+                item.Lift));
+    }
+
+    private static CartCompletionRecommendationResponse
+        MapCartCompletionRecommendation(CartCompletionRecommendationItem item)
+    {
+        return new CartCompletionRecommendationResponse(
+            item.ProductId,
+            item.Score,
+            nameof(RecommendationType.CartCompletion),
+            "Association.CartCompletion",
+            "Frequently purchased with products in the cart.",
+            new CartCompletionMetricsResponse(
+                item.SupportingCartProductCount,
                 item.Confidence,
                 item.Lift));
     }

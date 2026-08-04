@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -62,6 +63,109 @@ public sealed class RecommendationOutboxAuthenticationTests(
         Assert.DoesNotContain(
             logs.Entries,
             entry => entry.Contains(ApiKey, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Cart_completion_client_posts_strict_body_with_api_key()
+    {
+        var firstProductId = Guid.NewGuid();
+        var secondProductId = Guid.NewGuid();
+        var recommendedProductId = Guid.NewGuid();
+        var recorder = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(new[]
+            {
+                new RecommendationItemDto(
+                    recommendedProductId,
+                    "Cart completion",
+                    1m)
+            })
+        });
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var logs = new CapturingLogger<RecommendationApiClient>();
+        var client = new RecommendationApiClient(httpClient, logs);
+
+        var recommendations = await client.GetCartCompletionRecommendationsAsync(
+            [firstProductId, firstProductId, secondProductId],
+            4);
+
+        var recommendation = Assert.Single(recommendations);
+        Assert.Equal(recommendedProductId, recommendation.ProductId);
+        var request = Assert.Single(recorder.Requests);
+        Assert.Equal(HttpMethod.Post.Method, request.Method);
+        Assert.Equal("/api/v1/recommendations/cart", request.Path);
+        Assert.Equal(ApiKey, request.ApiKey);
+        using var payload = JsonDocument.Parse(request.Payload);
+        Assert.Equal(
+            [firstProductId, secondProductId],
+            payload.RootElement
+                .GetProperty("productIds")
+                .EnumerateArray()
+                .Select(element => element.GetGuid()));
+        Assert.Equal(4, payload.RootElement.GetProperty("limit").GetInt32());
+        Assert.False(payload.RootElement.TryGetProperty("count", out _));
+        Assert.DoesNotContain(
+            logs.Entries,
+            entry => entry.Contains(ApiKey, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound)]
+    [InlineData(HttpStatusCode.OK)]
+    public async Task Cart_completion_client_uses_ordered_popularity_fallback(
+        HttpStatusCode cartStatus)
+    {
+        var cartProductId = Guid.NewGuid();
+        var firstFallbackId = Guid.NewGuid();
+        var secondFallbackId = Guid.NewGuid();
+        var recorder = new RecordingHandler(request =>
+        {
+            if (request.RequestUri?.AbsolutePath
+                == "/api/v1/recommendations/cart")
+            {
+                return new HttpResponseMessage(cartStatus)
+                {
+                    Content = JsonContent.Create(
+                        Array.Empty<RecommendationItemDto>())
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = JsonContent.Create(new[]
+                {
+                    new RecommendationItemDto(cartProductId, "Popular", 1m),
+                    new RecommendationItemDto(firstFallbackId, "Popular", 0.8m),
+                    new RecommendationItemDto(secondFallbackId, "Popular", 0.7m)
+                })
+            };
+        });
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var client = new RecommendationApiClient(
+            httpClient,
+            NullLogger<RecommendationApiClient>.Instance);
+
+        var recommendations = await client.GetCartCompletionRecommendationsAsync(
+            [cartProductId],
+            2);
+
+        Assert.Equal(
+            [firstFallbackId, secondFallbackId],
+            recommendations.Select(item => item.ProductId));
+        Assert.Collection(
+            recorder.Requests,
+            request =>
+            {
+                Assert.Equal(HttpMethod.Post.Method, request.Method);
+                Assert.Equal("/api/v1/recommendations/cart", request.Path);
+                Assert.Equal(ApiKey, request.ApiKey);
+            },
+            request =>
+            {
+                Assert.Equal(HttpMethod.Get.Method, request.Method);
+                Assert.Equal("/api/v1/recommendations/popular", request.Path);
+                Assert.Equal(ApiKey, request.ApiKey);
+            });
     }
 
     [Fact]
@@ -273,6 +377,8 @@ public sealed class RecommendationOutboxAuthenticationTests(
 
         public string RequestPayload { get; private set; } = string.Empty;
 
+        public List<RecordedRequest> Requests { get; } = [];
+
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -287,10 +393,23 @@ public sealed class RecommendationOutboxAuthenticationTests(
             RequestPayload = request.Content is null
                 ? string.Empty
                 : await request.Content.ReadAsStringAsync(cancellationToken);
+            Requests.Add(new RecordedRequest(
+                request.Method.Method,
+                RequestPath ?? string.Empty,
+                RequestQuery ?? string.Empty,
+                ApiKey,
+                RequestPayload));
             return responseFactory?.Invoke(request)
                 ?? new HttpResponseMessage(HttpStatusCode.OK);
         }
     }
+
+    private sealed record RecordedRequest(
+        string Method,
+        string Path,
+        string Query,
+        string? ApiKey,
+        string Payload);
 
     private sealed class CapturingLogger<T> : ILogger<T>
     {

@@ -40,6 +40,12 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IFrequentlyBoughtTogetherRecommendationService,
     FrequentlyBoughtTogetherRecommendationService>();
+builder.Services.AddScoped<
+    ICartCompletionRecommendationStore,
+    SqlServerCartCompletionRecommendationStore>();
+builder.Services.AddScoped<
+    ICartCompletionRecommendationService,
+    CartCompletionRecommendationService>();
 builder.Services.AddSingleton<RecommendationEventValidator>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services
@@ -49,6 +55,14 @@ builder.Services
     .Validate(
         options => options.IsValid(),
         $"Configuration section '{PopularityRecommendationOptions.SectionName}' is invalid.")
+    .ValidateOnStart();
+builder.Services
+    .AddOptions<CartCompletionRecommendationOptions>()
+    .Bind(builder.Configuration.GetSection(
+        CartCompletionRecommendationOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        $"Configuration section '{CartCompletionRecommendationOptions.SectionName}' is invalid.")
     .ValidateOnStart();
 builder.Services
     .AddOptions<FrequentlyBoughtTogetherOptions>()

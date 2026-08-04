@@ -105,7 +105,10 @@ public sealed class SqlServerIntegrationStepStore(
             return false;
         }
 
-        step.AttemptCount = claim.AttemptNumber;
+        if (result.OutboundCallMade)
+        {
+            step.AttemptCount = claim.AttemptNumber;
+        }
         step.Status = plan.StepStatus;
         step.NextAttemptAtUtc = plan.NextAttemptAtUtc;
         step.LockedAtUtc = null;
@@ -133,27 +136,30 @@ public sealed class SqlServerIntegrationStepStore(
                 100);
         }
 
-        dbContext.IntegrationAttempts.Add(new IntegrationAttempt
+        if (result.OutboundCallMade)
         {
-            StepId = step.Id,
-            AttemptNumber = claim.AttemptNumber,
-            StartedAtUtc = claim.ClaimedAtUtc,
-            CompletedAtUtc = completedAtUtc,
-            DurationMs = durationMs,
-            ResultType = result.ResultType,
-            HttpStatusCode = result.HttpStatusCode,
-            RequestHash = result.RequestHash,
-            RequestPayloadMasked = result.RequestPayloadMasked,
-            ResponsePayloadMasked = result.ResponsePayloadMasked,
-            ErrorCode = result.Succeeded
-                ? null
-                : Truncate(result.ErrorCode, 100),
-            ErrorMessage = result.Succeeded
-                ? null
-                : Truncate(result.ErrorMessage, 1000),
-            CorrelationId = claim.CorrelationId,
-            Step = step
-        });
+            dbContext.IntegrationAttempts.Add(new IntegrationAttempt
+            {
+                StepId = step.Id,
+                AttemptNumber = claim.AttemptNumber,
+                StartedAtUtc = claim.ClaimedAtUtc,
+                CompletedAtUtc = completedAtUtc,
+                DurationMs = durationMs,
+                ResultType = result.ResultType,
+                HttpStatusCode = result.HttpStatusCode,
+                RequestHash = result.RequestHash,
+                RequestPayloadMasked = result.RequestPayloadMasked,
+                ResponsePayloadMasked = result.ResponsePayloadMasked,
+                ErrorCode = result.Succeeded
+                    ? null
+                    : Truncate(result.ErrorCode, 100),
+                ErrorMessage = result.Succeeded
+                    ? null
+                    : Truncate(result.ErrorMessage, 1000),
+                CorrelationId = claim.CorrelationId,
+                Step = step
+            });
+        }
 
         if (result.Succeeded
             && step.StepType == IntegrationStepType.EnsureCustomer)

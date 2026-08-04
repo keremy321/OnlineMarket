@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text;
 using ErpIntegration.Api.Application.Models;
+using ErpIntegration.Api.Application.Services;
 using ErpIntegration.Api.Domain.Enums;
 using ErpIntegration.Api.Infrastructure.Configuration;
 using ErpIntegration.Api.Infrastructure.Http;
@@ -164,6 +165,11 @@ public sealed class MockErpClientTests
         Assert.Equal("RateLimit.Exceeded", result.ErrorCode);
         Assert.True(result.RetryAfterUtc > DateTime.UtcNow.AddSeconds(20));
         Assert.Single(handler.Requests);
+        var completionTimeUtc = DateTime.UtcNow;
+        var plan = new IntegrationRetryPolicy(
+                Options.Create(new IntegrationWorkerOptions()))
+            .Decide(CreateClaim(), result, completionTimeUtc);
+        Assert.Equal(result.RetryAfterUtc, plan.NextAttemptAtUtc);
     }
 
     [Fact]
@@ -195,14 +201,141 @@ public sealed class MockErpClientTests
         var circuitResult = await client.ExecuteAsync(CreateClaim());
 
         Assert.Equal("MockErp.CircuitOpen", circuitResult.ErrorCode);
+        Assert.False(circuitResult.OutboundCallMade);
         Assert.Equal(2, handler.Requests.Count);
+    }
+
+    [Fact]
+    public async Task Rate_limit_without_retry_after_is_left_for_delayed_durable_retry()
+    {
+        var handler = new QueueHttpMessageHandler(
+            Response(
+                HttpStatusCode.TooManyRequests,
+                """{"code":"RateLimit.Exceeded","message":"Slow down","retryable":true}"""));
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost/"),
+            Timeout = TimeSpan.FromSeconds(2)
+        };
+        var client = CreateClient(httpClient, fastRetryCount: 2);
+
+        var result = await client.ExecuteAsync(CreateClaim());
+
+        Assert.Equal(IntegrationResultType.TransientFailure, result.ResultType);
+        Assert.Equal("RateLimit.Exceeded", result.ErrorCode);
+        Assert.True(result.OutboundCallMade);
+        Assert.Null(result.RetryAfterUtc);
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task Only_one_half_open_probe_runs_and_success_closes_the_circuit()
+    {
+        var now = new DateTimeOffset(
+            2026,
+            8,
+            5,
+            10,
+            0,
+            0,
+            TimeSpan.Zero);
+        var timeProvider = new ManualTimeProvider(now);
+        var circuitBreaker = new MockErpCircuitBreaker();
+        OpenCircuit(circuitBreaker, timeProvider.GetUtcNow().UtcDateTime);
+        var handler = new BlockingProbeHttpMessageHandler();
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost/"),
+            Timeout = TimeSpan.FromSeconds(2)
+        };
+        var client = CreateClient(
+            httpClient,
+            fastRetryCount: 0,
+            circuitBreaker: circuitBreaker,
+            timeProvider: timeProvider,
+            circuitBreakDuration: TimeSpan.FromSeconds(30));
+
+        var openResult = await client.ExecuteAsync(CreateClaim());
+        Assert.Equal("MockErp.CircuitOpen", openResult.ErrorCode);
+        Assert.False(openResult.OutboundCallMade);
+        Assert.Equal(0, handler.RequestCount);
+
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+        var probeTask = client.ExecuteAsync(CreateClaim());
+        await handler.ProbeStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        var concurrentResult = await client.ExecuteAsync(CreateClaim());
+
+        Assert.Equal("MockErp.CircuitOpen", concurrentResult.ErrorCode);
+        Assert.False(concurrentResult.OutboundCallMade);
+        Assert.Equal(1, handler.RequestCount);
+
+        handler.ReleaseProbe.TrySetResult();
+        var probeResult = await probeTask;
+        Assert.True(probeResult.Succeeded);
+        var afterRecovery = await client.ExecuteAsync(CreateClaim());
+        Assert.True(afterRecovery.Succeeded);
+        Assert.Equal(2, handler.RequestCount);
+        Assert.Equal(
+            MockErpCircuitState.Closed,
+            circuitBreaker.GetSnapshot(
+                timeProvider.GetUtcNow().UtcDateTime).State);
+    }
+
+    [Fact]
+    public async Task Failed_half_open_probe_reopens_the_circuit()
+    {
+        var now = new DateTimeOffset(
+            2026,
+            8,
+            5,
+            10,
+            0,
+            0,
+            TimeSpan.Zero);
+        var timeProvider = new ManualTimeProvider(now);
+        var circuitBreaker = new MockErpCircuitBreaker();
+        OpenCircuit(circuitBreaker, timeProvider.GetUtcNow().UtcDateTime);
+        timeProvider.Advance(TimeSpan.FromSeconds(31));
+        var handler = new QueueHttpMessageHandler(
+            Response(
+                HttpStatusCode.ServiceUnavailable,
+                """{"code":"MockErp.Unavailable","message":"Unavailable","retryable":true}"""));
+        using var httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri("http://localhost/"),
+            Timeout = TimeSpan.FromSeconds(2)
+        };
+        var client = CreateClient(
+            httpClient,
+            fastRetryCount: 0,
+            circuitBreaker: circuitBreaker,
+            timeProvider: timeProvider,
+            circuitBreakDuration: TimeSpan.FromSeconds(30));
+
+        var probeResult = await client.ExecuteAsync(CreateClaim());
+        var openResult = await client.ExecuteAsync(CreateClaim());
+
+        Assert.Equal(
+            IntegrationResultType.TransientFailure,
+            probeResult.ResultType);
+        Assert.True(probeResult.OutboundCallMade);
+        Assert.Equal("MockErp.CircuitOpen", openResult.ErrorCode);
+        Assert.False(openResult.OutboundCallMade);
+        Assert.Single(handler.Requests);
+        Assert.Equal(
+            MockErpCircuitState.Open,
+            circuitBreaker.GetSnapshot(
+                timeProvider.GetUtcNow().UtcDateTime).State);
     }
 
     private static MockErpClient CreateClient(
         HttpClient httpClient,
         int fastRetryCount,
         TimeSpan? maxFastRetryDelay = null,
-        int circuitBreakerThreshold = 5)
+        int circuitBreakerThreshold = 5,
+        MockErpCircuitBreaker? circuitBreaker = null,
+        TimeProvider? timeProvider = null,
+        TimeSpan? circuitBreakDuration = null)
     {
         return new MockErpClient(
             httpClient,
@@ -217,11 +350,26 @@ public sealed class MockErpClientTests
                     maxFastRetryDelay ?? TimeSpan.Zero,
                 CircuitBreakerFailureThreshold =
                     circuitBreakerThreshold,
-                CircuitBreakerBreakDuration = TimeSpan.FromSeconds(30)
+                CircuitBreakerBreakDuration =
+                    circuitBreakDuration ?? TimeSpan.FromSeconds(30)
             }),
-            new MockErpCircuitBreaker(),
-            TimeProvider.System,
+            circuitBreaker ?? new MockErpCircuitBreaker(),
+            timeProvider ?? TimeProvider.System,
             NullLogger<MockErpClient>.Instance);
+    }
+
+    private static void OpenCircuit(
+        MockErpCircuitBreaker circuitBreaker,
+        DateTime nowUtc)
+    {
+        circuitBreaker.RecordTransientFailure(
+            nowUtc,
+            2,
+            TimeSpan.FromSeconds(30));
+        circuitBreaker.RecordTransientFailure(
+            nowUtc,
+            2,
+            TimeSpan.FromSeconds(30));
     }
 
     private static ClaimedIntegrationStep CreateClaim()
@@ -306,6 +454,52 @@ public sealed class MockErpClientTests
                 ? response
                 : throw new InvalidOperationException(
                     "No response was configured.");
+        }
+    }
+
+    private sealed class BlockingProbeHttpMessageHandler
+        : HttpMessageHandler
+    {
+        private int requestCount;
+
+        public int RequestCount => Volatile.Read(ref requestCount);
+
+        public TaskCompletionSource ProbeStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ReleaseProbe { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            var count = Interlocked.Increment(ref requestCount);
+            if (count == 1)
+            {
+                ProbeStarted.TrySetResult();
+                await ReleaseProbe.Task.WaitAsync(cancellationToken);
+            }
+
+            return Response(
+                HttpStatusCode.Created,
+                """{"erpCustomerId":"11111111-1111-1111-1111-111111111111","erpCustomerCode":"CARI-TEST","externalCustomerId":"22222222-2222-2222-2222-222222222222","created":true}""");
+        }
+    }
+
+    private sealed class ManualTimeProvider(DateTimeOffset initialUtc)
+        : TimeProvider
+    {
+        private DateTimeOffset utcNow = initialUtc;
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            return utcNow;
+        }
+
+        public void Advance(TimeSpan duration)
+        {
+            utcNow = utcNow.Add(duration);
         }
     }
 

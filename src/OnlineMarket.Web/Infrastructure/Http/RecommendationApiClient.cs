@@ -104,22 +104,51 @@ public class RecommendationApiClient : IRecommendationClient
 
     public async Task<List<RecommendationItemDto>> GetCartCompletionRecommendationsAsync(List<Guid> productIds, int count = 5)
     {
-        if (IsCircuitOpen()) return new List<RecommendationItemDto>();
+        if (productIds.Count == 0 || count <= 0)
+        {
+            return [];
+        }
+
+        var distinctProductIds = productIds.Distinct().ToArray();
         try
         {
+            if (IsCircuitOpen())
+            {
+                return [];
+            }
+
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            var response = await _httpClient.PostAsJsonAsync("/api/v1/recommendations/cart", new { ProductIds = productIds, Count = count }, cts.Token);
+            using var response = await _httpClient.PostAsJsonAsync(
+                "/api/v1/recommendations/cart",
+                new
+                {
+                    ProductIds = distinctProductIds,
+                    Limit = count
+                },
+                cts.Token);
             if (response.IsSuccessStatusCode)
             {
                 var result = await response.Content.ReadFromJsonAsync<List<RecommendationItemDto>>(cancellationToken: cts.Token);
-                return result ?? new List<RecommendationItemDto>();
+                if (result is { Count: > 0 })
+                {
+                    return result;
+                }
             }
         }
         catch (Exception ex)
         {
-            RecordFailure();
-            _logger.LogWarning("Recommendation.Api unavailable ({Message}). Circuit opened for 15s.", ex.Message);
+            _logger.LogWarning(
+                "Cart-completion recommendations were unavailable ({Message}); using popularity fallback.",
+                ex.Message);
         }
-        return new List<RecommendationItemDto>();
+
+        var popular = await GetPopularRecommendationsAsync(
+            Math.Min(100, count + distinctProductIds.Length));
+        var cartProductIds = distinctProductIds.ToHashSet();
+        return popular
+            .Where(item => !cartProductIds.Contains(item.ProductId))
+            .DistinctBy(item => item.ProductId)
+            .Take(count)
+            .ToList();
     }
 }
