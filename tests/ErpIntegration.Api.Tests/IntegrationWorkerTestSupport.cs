@@ -79,7 +79,10 @@ internal static class IntegrationWorkerTestSupport
             null,
             null,
             externalReference,
-            null);
+            null)
+        {
+            OutboundCallMade = true
+        };
     }
 
     public static StepExecutionResult Transient(
@@ -94,7 +97,10 @@ internal static class IntegrationWorkerTestSupport
             "MockErp.Unavailable",
             "Mock ERP is temporarily unavailable.",
             null,
-            null);
+            null)
+        {
+            OutboundCallMade = true
+        };
     }
 
     public static StepExecutionResult Permanent(
@@ -109,7 +115,47 @@ internal static class IntegrationWorkerTestSupport
             "Validation.Failed",
             "Mock ERP rejected the request.",
             null,
-            null);
+            null)
+        {
+            OutboundCallMade = true
+        };
+    }
+
+    public static StepExecutionResult CircuitOpen(
+        ClaimedIntegrationStep step)
+    {
+        return new StepExecutionResult(
+            IntegrationResultType.TransientFailure,
+            null,
+            new string('d', 64),
+            MaskedRequest(step),
+            null,
+            "MockErp.CircuitOpen",
+            "The Mock ERP circuit is temporarily open.",
+            null,
+            null)
+        {
+            OutboundCallMade = false
+        };
+    }
+
+    public static StepExecutionResult RateLimited(
+        ClaimedIntegrationStep step,
+        DateTime? retryAfterUtc = null)
+    {
+        return new StepExecutionResult(
+            IntegrationResultType.TransientFailure,
+            429,
+            new string('e', 64),
+            MaskedRequest(step),
+            """{"code":"RateLimit.Exceeded","retryable":true}""",
+            "RateLimit.Exceeded",
+            "Mock ERP rate limited the request.",
+            null,
+            retryAfterUtc)
+        {
+            OutboundCallMade = true
+        };
     }
 
     private static string MaskedRequest(ClaimedIntegrationStep step)

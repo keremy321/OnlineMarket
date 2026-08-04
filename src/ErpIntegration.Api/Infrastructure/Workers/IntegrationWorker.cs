@@ -1,5 +1,6 @@
+using ErpIntegration.Api.Application.Interfaces;
 using ErpIntegration.Api.Application.Models;
-using ErpIntegration.Api.Application.Services;
+using ErpIntegration.Api.Infrastructure.Http;
 using Microsoft.Extensions.Options;
 
 namespace ErpIntegration.Api.Infrastructure.Workers;
@@ -7,6 +8,7 @@ namespace ErpIntegration.Api.Infrastructure.Workers;
 public sealed class IntegrationWorker(
     IServiceScopeFactory scopeFactory,
     IOptions<IntegrationWorkerOptions> options,
+    MockErpCircuitBreaker circuitBreaker,
     TimeProvider timeProvider,
     ILogger<IntegrationWorker> logger)
     : BackgroundService
@@ -24,19 +26,56 @@ public sealed class IntegrationWorker(
         }
 
         logger.LogInformation(
-            "ERP integration worker {WorkerId} started.",
-            workerId);
+            "ERP integration worker {WorkerId} started with claim batch size {ClaimBatchSize} and maximum parallelism {MaximumParallelism}.",
+            workerId,
+            options.ClaimBatchSize,
+            options.MaximumParallelism);
+        var pausedForCircuit = false;
         while (!stoppingToken.IsCancellationRequested)
         {
-            var processed = false;
             try
             {
-                using var scope = scopeFactory.CreateScope();
-                var processor = scope.ServiceProvider
-                    .GetRequiredService<IntegrationStepProcessor>();
-                processed = await processor.ProcessNextAsync(
-                    workerId,
-                    stoppingToken);
+                var beforeCycle = circuitBreaker.GetSnapshot(GetUtcNow());
+                if (IsPaused(beforeCycle.State))
+                {
+                    if (!pausedForCircuit)
+                    {
+                        logger.LogWarning(
+                            "ERP integration worker {WorkerId} paused while the Mock ERP circuit is {CircuitState}; retry after {RetryAfterUtc}.",
+                            workerId,
+                            beforeCycle.State,
+                            beforeCycle.RetryAfterUtc);
+                        pausedForCircuit = true;
+                    }
+
+                    await DelayUntilNextCycleAsync(
+                        beforeCycle.RetryAfterUtc,
+                        stoppingToken);
+                    continue;
+                }
+
+                await ProcessCycleAsync(workerId, stoppingToken);
+                var afterCycle = circuitBreaker.GetSnapshot(GetUtcNow());
+                if (pausedForCircuit
+                    && afterCycle.State == MockErpCircuitState.Closed)
+                {
+                    logger.LogInformation(
+                        "ERP integration worker {WorkerId} resumed after the Mock ERP circuit recovered.",
+                        workerId);
+                    pausedForCircuit = false;
+                }
+                else if (IsPaused(afterCycle.State))
+                {
+                    if (!pausedForCircuit)
+                    {
+                        logger.LogWarning(
+                            "ERP integration worker {WorkerId} paused after the Mock ERP circuit opened; retry after {RetryAfterUtc}.",
+                            workerId,
+                            afterCycle.RetryAfterUtc);
+                    }
+
+                    pausedForCircuit = true;
+                }
             }
             catch (OperationCanceledException)
                 when (stoppingToken.IsCancellationRequested)
@@ -50,14 +89,100 @@ public sealed class IntegrationWorker(
                     "The ERP integration worker loop failed.");
             }
 
-            if (!processed)
+            await Task.Delay(
+                options.PollInterval,
+                timeProvider,
+                stoppingToken);
+        }
+    }
+
+    public async Task<int> ProcessCycleAsync(
+        string cycleWorkerId,
+        CancellationToken cancellationToken = default)
+    {
+        var snapshot = circuitBreaker.GetSnapshot(GetUtcNow());
+        if (IsPaused(snapshot.State))
+        {
+            return 0;
+        }
+
+        var claimLimit = snapshot.State == MockErpCircuitState.HalfOpenReady
+            ? 1
+            : options.ClaimBatchSize;
+        var parallelism = Math.Min(
+            snapshot.State == MockErpCircuitState.HalfOpenReady
+                ? 1
+                : options.MaximumParallelism,
+            claimLimit);
+        var processedCount = 0;
+        while (processedCount < claimLimit)
+        {
+            var waveSize = Math.Min(
+                parallelism,
+                claimLimit - processedCount);
+            var results = await Task.WhenAll(
+                Enumerable.Range(0, waveSize)
+                    .Select(_ => ProcessOneAsync(
+                        cycleWorkerId,
+                        cancellationToken)));
+            var waveProcessedCount = results.Count(processed => processed);
+            processedCount += waveProcessedCount;
+            if (waveProcessedCount < waveSize)
             {
-                await Task.Delay(
-                    options.PollInterval,
-                    timeProvider,
-                    stoppingToken);
+                break;
+            }
+
+            if (circuitBreaker.GetSnapshot(GetUtcNow()).State
+                != MockErpCircuitState.Closed)
+            {
+                break;
             }
         }
+
+        return processedCount;
+    }
+
+    private async Task<bool> ProcessOneAsync(
+        string cycleWorkerId,
+        CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var processor = scope.ServiceProvider
+            .GetRequiredService<IIntegrationStepProcessor>();
+        return await processor.ProcessNextAsync(
+            cycleWorkerId,
+            cancellationToken);
+    }
+
+    private async Task DelayUntilNextCycleAsync(
+        DateTime? retryAfterUtc,
+        CancellationToken cancellationToken)
+    {
+        var delay = options.PollInterval;
+        if (retryAfterUtc.HasValue)
+        {
+            var remaining = retryAfterUtc.Value - GetUtcNow();
+            if (remaining > TimeSpan.Zero && remaining < delay)
+            {
+                delay = remaining;
+            }
+        }
+
+        await Task.Delay(delay, timeProvider, cancellationToken);
+    }
+
+    private static bool IsPaused(MockErpCircuitState state)
+    {
+        return state is MockErpCircuitState.Open
+            or MockErpCircuitState.HalfOpenProbeInProgress;
+    }
+
+    private DateTime GetUtcNow()
+    {
+        var value = timeProvider.GetUtcNow().UtcDateTime;
+        return new DateTime(
+            value.Ticks - value.Ticks % TimeSpan.TicksPerMillisecond,
+            DateTimeKind.Utc);
     }
 
     private static string CreateWorkerId()

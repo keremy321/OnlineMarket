@@ -175,10 +175,9 @@ public sealed class IntegrationOrderService(
         }
 
         logger.LogInformation(
-            "Scheduled manual retry for ERP integration order {OrderId} at step {StepType} with stable key {IdempotencyKey}.",
+            "Scheduled manual retry for ERP integration order {OrderId} at step {StepType}; the existing idempotency key was retained.",
             orderId,
-            candidate.StepType,
-            candidate.IdempotencyKey);
+            candidate.StepType);
 
         var response = await GetOrderAsync(orderId, cancellationToken)
             ?? throw new InvalidOperationException(

@@ -15,6 +15,7 @@ public sealed class IntegrationStepProcessor(
     IOptions<IntegrationWorkerOptions> options,
     TimeProvider timeProvider,
     ILogger<IntegrationStepProcessor> logger)
+    : IIntegrationStepProcessor
 {
     private const string UnknownMaskedRequest =
         """{"operation":"unavailable"}""";
@@ -82,6 +83,13 @@ public sealed class IntegrationStepProcessor(
         stopwatch.Stop();
         var completedAtUtc = GetUtcNow();
         var plan = retryPolicy.Decide(claim, result, completedAtUtc);
+        if (result.HttpStatusCode == StatusCodes.Status429TooManyRequests)
+        {
+            logger.LogWarning(
+                "ERP step {StepId} was rate limited and deferred until {NextAttemptAtUtc}.",
+                claim.StepId,
+                plan.NextAttemptAtUtc);
+        }
         var durationMs = stopwatch.ElapsedMilliseconds > int.MaxValue
             ? int.MaxValue
             : (int)stopwatch.ElapsedMilliseconds;

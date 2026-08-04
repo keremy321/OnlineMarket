@@ -253,6 +253,18 @@ Database integration tests should prefer an isolated SQL Server Testcontainers
 instance when their owning application phase adds those tests. Testcontainers
 must use non-production credentials and disposable storage.
 
+## Local ERP worker throughput
+
+Mock ERP keeps its fixed-window protection enabled at 120 requests per minute.
+The local ERP Integration worker claims at most two steps per cycle, runs at
+most two calls concurrently, and waits three seconds between cycles. Normal
+traffic is therefore capped at 40 calls per minute. With the configured single
+fast retry, the worst-case worker-generated traffic remains at or below 80
+calls per minute. HTTP 429 responses without `Retry-After` are left to the
+durable exponential backoff with bounded jitter; a supplied `Retry-After` is
+honoured. Bulk manual retries only change durable states and enter this same
+throttled worker queue.
+
 The Online Market database integration suite uses an isolated SQL Server 2022
 Testcontainers resource with random host-port allocation and unique database
 names. LocalDB is not used by that suite. Never point reset or migration

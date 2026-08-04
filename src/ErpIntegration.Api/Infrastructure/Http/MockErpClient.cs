@@ -62,7 +62,10 @@ public sealed class MockErpClient(
                 exception.Code,
                 exception.Message,
                 null,
-                null);
+                null)
+            {
+                OutboundCallMade = false
+            };
         }
 
         var payload = JsonSerializer.SerializeToUtf8Bytes(
@@ -72,13 +75,13 @@ public sealed class MockErpClient(
         var requestHash = Convert.ToHexString(
                 SHA256.HashData(payload))
             .ToLowerInvariant();
+        var outboundCallMade = false;
 
         for (var sendNumber = 0; ; sendNumber++)
         {
             var nowUtc = GetUtcNow();
-            if (!circuitBreaker.TryAcquire(
-                    nowUtc,
-                    out var circuitRetryAfterUtc))
+            var circuitLease = circuitBreaker.TryAcquire(nowUtc);
+            if (!circuitLease.Acquired)
             {
                 return TransientFailure(
                     requestHash,
@@ -87,13 +90,24 @@ public sealed class MockErpClient(
                     "The Mock ERP circuit is temporarily open.",
                     null,
                     null,
-                    circuitRetryAfterUtc);
+                    circuitLease.RetryAfterUtc) with
+                {
+                    OutboundCallMade = outboundCallMade
+                };
+            }
+
+            if (circuitLease.IsHalfOpenProbe)
+            {
+                logger.LogInformation(
+                    "Starting the single Mock ERP half-open probe for operation {Operation}.",
+                    mapped.Operation);
             }
 
             StepExecutionResult result;
             try
             {
                 using var request = CreateRequest(step, mapped.Path, payload);
+                outboundCallMade = true;
                 using var response = await httpClient.SendAsync(
                     request,
                     HttpCompletionOption.ResponseHeadersRead,
@@ -123,9 +137,20 @@ public sealed class MockErpClient(
                     "The Mock ERP connection failed.");
             }
 
+            result = result with
+            {
+                OutboundCallMade = outboundCallMade
+            };
+
             if (result.Succeeded)
             {
-                circuitBreaker.RecordSuccess();
+                var circuitClosed = circuitBreaker.RecordSuccess();
+                if (circuitClosed)
+                {
+                    logger.LogInformation(
+                        "The Mock ERP circuit closed after a successful probe.");
+                }
+
                 logger.LogInformation(
                     "Mock ERP operation {Operation} succeeded with status {StatusCode} for correlation {CorrelationId}.",
                     mapped.Operation,
@@ -136,7 +161,13 @@ public sealed class MockErpClient(
 
             if (result.ResultType == IntegrationResultType.PermanentFailure)
             {
-                circuitBreaker.RecordSuccess();
+                var circuitClosed = circuitBreaker.RecordSuccess();
+                if (circuitClosed)
+                {
+                    logger.LogInformation(
+                        "The Mock ERP circuit closed after the probe reached the service.");
+                }
+
                 logger.LogWarning(
                     "Mock ERP operation {Operation} failed permanently with code {ErrorCode} for correlation {CorrelationId}.",
                     mapped.Operation,
@@ -145,13 +176,37 @@ public sealed class MockErpClient(
                 return result;
             }
 
-            circuitBreaker.RecordTransientFailure(
+            var circuitTransition = circuitBreaker.RecordTransientFailure(
                 GetUtcNow(),
                 options.CircuitBreakerFailureThreshold,
                 options.CircuitBreakerBreakDuration);
+            if (circuitTransition.Opened)
+            {
+                logger.LogWarning(
+                    "The Mock ERP circuit opened until {OpenUntilUtc} after operation {Operation} failed transiently with code {ErrorCode}.",
+                    circuitTransition.OpenUntilUtc,
+                    mapped.Operation,
+                    result.ErrorCode);
+            }
+
+            if (result.HttpStatusCode
+                == (short)HttpStatusCode.TooManyRequests)
+            {
+                logger.LogWarning(
+                    "Mock ERP rate limiting deferred operation {Operation}; Retry-After is {RetryAfterUtc}.",
+                    mapped.Operation,
+                    result.RetryAfterUtc);
+            }
+
             var fastRetryDelay = GetFastRetryDelay(
                 sendNumber,
                 result.RetryAfterUtc);
+            if (result.HttpStatusCode
+                    == (short)HttpStatusCode.TooManyRequests
+                && result.RetryAfterUtc is null)
+            {
+                fastRetryDelay = null;
+            }
             if (sendNumber >= options.FastRetryCount
                 || fastRetryDelay is null)
             {

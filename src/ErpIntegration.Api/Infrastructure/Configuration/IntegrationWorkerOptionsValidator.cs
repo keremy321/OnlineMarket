@@ -39,6 +39,19 @@ public sealed class IntegrationWorkerOptionsValidator
                 "IntegrationWorker:MaxRetryDelay must be at least the base delay and no more than one hour.");
         }
 
+        if (options.ClaimBatchSize is < 1 or > 50)
+        {
+            failures.Add(
+                "IntegrationWorker:ClaimBatchSize must be between one and 50.");
+        }
+
+        if (options.MaximumParallelism is < 1 or > 16
+            || options.MaximumParallelism > options.ClaimBatchSize)
+        {
+            failures.Add(
+                "IntegrationWorker:MaximumParallelism must be between one and 16 and cannot exceed ClaimBatchSize.");
+        }
+
         return failures.Count == 0
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(failures);

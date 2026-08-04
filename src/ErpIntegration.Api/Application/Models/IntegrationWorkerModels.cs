@@ -15,6 +15,10 @@ public sealed record IntegrationWorkerOptions
     public TimeSpan BaseRetryDelay { get; init; } = TimeSpan.FromSeconds(5);
 
     public TimeSpan MaxRetryDelay { get; init; } = TimeSpan.FromMinutes(5);
+
+    public int ClaimBatchSize { get; init; } = 2;
+
+    public int MaximumParallelism { get; init; } = 2;
 }
 
 public sealed record ClaimedIntegrationStep(
@@ -76,6 +80,8 @@ public sealed record StepExecutionResult(
     string? ExternalReference,
     DateTime? RetryAfterUtc)
 {
+    public bool OutboundCallMade { get; init; }
+
     public bool Succeeded =>
         ResultType is IntegrationResultType.Succeeded
             or IntegrationResultType.IdempotentReplay;
