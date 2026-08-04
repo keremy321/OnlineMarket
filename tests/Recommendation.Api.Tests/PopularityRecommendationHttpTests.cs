@@ -97,7 +97,7 @@ public sealed class PopularityRecommendationHttpTests(
         using var response = await SendAuthenticatedAsync(
             client,
             HttpMethod.Get,
-            "/api/v1/recommendations/popular?count=100");
+            "/api/v1/recommendations/popular?limit=100");
 
         Assert.Equal(HttpStatusCode.OK, recalculation.StatusCode);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -127,7 +127,7 @@ public sealed class PopularityRecommendationHttpTests(
     }
 
     [Fact]
-    public async Task Popular_limit_is_capped_and_ties_have_stable_product_order()
+    public async Task Popular_limit_pipeline_uses_default_exact_cap_and_rejects_nonpositive()
     {
         await using var database = await fixture.CreateDatabaseAsync();
         await using (var setup = database.CreateContext())
@@ -136,7 +136,10 @@ public sealed class PopularityRecommendationHttpTests(
             {
                 CreateProduct(101),
                 CreateProduct(102),
-                CreateProduct(103)
+                CreateProduct(103),
+                CreateProduct(104),
+                CreateProduct(105),
+                CreateProduct(106)
             };
             setup.ProductSnapshots.AddRange(products);
             await setup.SaveChangesAsync();
@@ -149,8 +152,8 @@ public sealed class PopularityRecommendationHttpTests(
 
         var configuration = new Dictionary<string, string?>
         {
-            ["Recommendation:Popularity:DefaultLimit"] = "2",
-            ["Recommendation:Popularity:MaximumLimit"] = "2"
+            ["Recommendation:Popularity:DefaultLimit"] = "3",
+            ["Recommendation:Popularity:MaximumLimit"] = "5"
         };
         await using var factory = new RecommendationWebApplicationFactory(
             database.ConnectionString,
@@ -161,33 +164,66 @@ public sealed class PopularityRecommendationHttpTests(
             client,
             HttpMethod.Post,
             "/api/v1/recommendations/recalculate");
-        using var firstResponse = await SendAuthenticatedAsync(
+        using var defaultResponse = await SendAuthenticatedAsync(
             client,
             HttpMethod.Get,
-            "/api/v1/recommendations/popular?count=500");
-        using var secondResponse = await SendAuthenticatedAsync(
+            "/api/v1/recommendations/popular");
+        using var fourResponse = await SendAuthenticatedAsync(
             client,
             HttpMethod.Get,
-            "/api/v1/recommendations/popular?count=500");
+            "/api/v1/recommendations/popular?limit=4");
+        using var oneResponse = await SendAuthenticatedAsync(
+            client,
+            HttpMethod.Get,
+            "/api/v1/recommendations/popular?limit=1");
+        using var cappedResponse = await SendAuthenticatedAsync(
+            client,
+            HttpMethod.Get,
+            "/api/v1/recommendations/popular?limit=500");
+        using var repeatedCappedResponse = await SendAuthenticatedAsync(
+            client,
+            HttpMethod.Get,
+            "/api/v1/recommendations/popular?limit=500");
+        using var zeroResponse = await SendAuthenticatedAsync(
+            client,
+            HttpMethod.Get,
+            "/api/v1/recommendations/popular?limit=0");
+        using var negativeResponse = await SendAuthenticatedAsync(
+            client,
+            HttpMethod.Get,
+            "/api/v1/recommendations/popular?limit=-1");
 
         Assert.Equal(HttpStatusCode.OK, recalculation.StatusCode);
-        var first = (await firstResponse.Content
+        var defaults = (await defaultResponse.Content
             .ReadFromJsonAsync<List<RecommendationResponse>>())!;
-        var second = (await secondResponse.Content
+        var four = (await fourResponse.Content
             .ReadFromJsonAsync<List<RecommendationResponse>>())!;
-        Assert.Equal(2, first.Count);
+        var one = (await oneResponse.Content
+            .ReadFromJsonAsync<List<RecommendationResponse>>())!;
+        var capped = (await cappedResponse.Content
+            .ReadFromJsonAsync<List<RecommendationResponse>>())!;
+        var repeatedCapped = (await repeatedCappedResponse.Content
+            .ReadFromJsonAsync<List<RecommendationResponse>>())!;
+        Assert.Equal(3, defaults.Count);
+        Assert.Equal(4, four.Count);
+        Assert.Single(one);
+        Assert.Equal(5, capped.Count);
+        Assert.Equal(HttpStatusCode.BadRequest, zeroResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, negativeResponse.StatusCode);
         Assert.Equal(
-            first.Select(item => item.ProductId),
-            second.Select(item => item.ProductId));
+            capped.Select(item => item.ProductId),
+            repeatedCapped.Select(item => item.ProductId));
 
         await using var verification = database.CreateContext();
         var expected = await verification.ProductPopularity
             .OrderByDescending(item => item.Score)
             .ThenBy(item => item.ProductId)
-            .Take(2)
+            .Take(5)
             .Select(item => item.ProductId)
             .ToArrayAsync();
-        Assert.Equal(expected, first.Select(item => item.ProductId));
+        Assert.Equal(expected, capped.Select(item => item.ProductId));
+        Assert.Equal(expected.Take(4), four.Select(item => item.ProductId));
+        Assert.Equal(expected.Take(1), one.Select(item => item.ProductId));
     }
 
     [Fact]
