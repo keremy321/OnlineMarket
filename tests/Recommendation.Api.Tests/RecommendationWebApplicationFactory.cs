@@ -6,7 +6,8 @@ namespace Recommendation.Api.Tests;
 
 internal sealed class RecommendationWebApplicationFactory(
     string connectionString,
-    string? apiKey)
+    string? apiKey,
+    IReadOnlyDictionary<string, string?>? additionalConfiguration = null)
     : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -14,13 +15,20 @@ internal sealed class RecommendationWebApplicationFactory(
         builder.UseEnvironment("Testing");
         builder.ConfigureAppConfiguration((_, configuration) =>
         {
-            configuration.AddInMemoryCollection(
-                new Dictionary<string, string?>
+            var values = new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:RecommendationDb"] = connectionString,
+                ["Security:ApiKey"] = apiKey
+            };
+            if (additionalConfiguration is not null)
+            {
+                foreach (var item in additionalConfiguration)
                 {
-                    ["ConnectionStrings:RecommendationDb"] =
-                        connectionString,
-                    ["Security:ApiKey"] = apiKey
-                });
+                    values[item.Key] = item.Value;
+                }
+            }
+
+            configuration.AddInMemoryCollection(values);
         });
     }
 }

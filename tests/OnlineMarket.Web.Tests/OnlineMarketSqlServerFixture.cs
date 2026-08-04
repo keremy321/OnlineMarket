@@ -102,13 +102,18 @@ public sealed class OnlineMarketTestDatabase : IAsyncDisposable
         return database;
     }
 
-    public OnlineMarketDbContext CreateContext()
+    public OnlineMarketDbContext CreateContext(bool enableRetryOnFailure = false)
     {
-        var options = new DbContextOptionsBuilder<OnlineMarketDbContext>()
-            .UseSqlServer(ConnectionString)
-            .Options;
+        var optionsBuilder = new DbContextOptionsBuilder<OnlineMarketDbContext>();
+        optionsBuilder.UseSqlServer(ConnectionString, sqlServerOptions =>
+        {
+            if (enableRetryOnFailure)
+            {
+                sqlServerOptions.EnableRetryOnFailure();
+            }
+        });
 
-        return new OnlineMarketDbContext(options);
+        return new OnlineMarketDbContext(optionsBuilder.Options);
     }
 
     public async ValueTask DisposeAsync()
