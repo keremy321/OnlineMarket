@@ -13,7 +13,8 @@ namespace Recommendation.Api.Controllers;
 [Authorize(AuthenticationSchemes = ApiKeyDefaults.Scheme)]
 [Route("api/v1/recommendations")]
 public sealed class RecommendationsController(
-    IPopularityRecommendationService popularityService)
+    IPopularityRecommendationService popularityService,
+    IFrequentlyBoughtTogetherRecommendationService fbtService)
     : ControllerBase
 {
     [HttpGet("popular")]
@@ -30,6 +31,23 @@ public sealed class RecommendationsController(
         return Ok(items.Select(MapRecommendation).ToArray());
     }
 
+    [HttpGet("fbt/{productId:guid}")]
+    [ProducesResponseType<
+        IReadOnlyList<FrequentlyBoughtTogetherRecommendationResponse>>(
+        StatusCodes.Status200OK)]
+    public async Task<ActionResult<
+        IReadOnlyList<FrequentlyBoughtTogetherRecommendationResponse>>> GetFbt(
+            Guid productId,
+            [FromQuery(Name = "limit"), Range(1, int.MaxValue)] int? limit,
+            CancellationToken cancellationToken)
+    {
+        var items = await fbtService.GetAsync(
+            productId,
+            limit,
+            cancellationToken);
+        return Ok(items.Select(MapFbtRecommendation).ToArray());
+    }
+
     [HttpPost("recalculate")]
     [ProducesResponseType<RecommendationRecalculationResponse>(
         StatusCodes.Status200OK)]
@@ -41,6 +59,30 @@ public sealed class RecommendationsController(
             cancellationToken);
         if (result.Outcome
             == PopularityRecalculationOutcome.AlreadyInProgress)
+        {
+            return Conflict(new ApiErrorResponse(
+                "Recommendation.RunAlreadyInProgress",
+                "A recommendation recalculation is already in progress.",
+                false));
+        }
+
+        return Ok(new RecommendationRecalculationResponse(
+            result.RunId
+                ?? throw new InvalidOperationException(
+                    "A successful recalculation did not return a run ID."),
+            "Succeeded",
+            result.OutputRecordCount));
+    }
+
+    [HttpPost("recalculate-fbt")]
+    [ProducesResponseType<RecommendationRecalculationResponse>(
+        StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RecalculateFbt(
+        CancellationToken cancellationToken)
+    {
+        var result = await fbtService.RecalculateAsync(cancellationToken);
+        if (result.Outcome == FbtRecalculationOutcome.AlreadyInProgress)
         {
             return Conflict(new ApiErrorResponse(
                 "Recommendation.RunAlreadyInProgress",
@@ -70,5 +112,21 @@ public sealed class RecommendationsController(
                 item.DistinctOrderCount,
                 item.WindowStartUtc,
                 item.WindowEndUtc));
+    }
+
+    private static FrequentlyBoughtTogetherRecommendationResponse
+        MapFbtRecommendation(FbtRecommendationItem item)
+    {
+        return new FrequentlyBoughtTogetherRecommendationResponse(
+            item.ProductId,
+            item.Score,
+            nameof(RecommendationType.FrequentlyBoughtTogether),
+            "Association.FrequentlyBoughtTogether",
+            "Frequently purchased with this product.",
+            new AssociationMetricsResponse(
+                item.PairOrderCount,
+                item.Support,
+                item.Confidence,
+                item.Lift));
     }
 }
