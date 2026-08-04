@@ -11,6 +11,7 @@ using MockErp.Api.Infrastructure.Http;
 using MockErp.Api.Infrastructure.Persistence;
 using MockErp.Api.Infrastructure.Security;
 
+var demoStockWorkbookPath = GetDemoStockWorkbookPath(args);
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<MockErpDbContext>((services, options) =>
@@ -23,6 +24,7 @@ builder.Services.AddDbContext<MockErpDbContext>((services, options) =>
     options.UseSqlServer(connectionString);
 });
 builder.Services.AddScoped<MockErpStockSeeder>();
+builder.Services.AddScoped<DemoErpStockExcelSeeder>();
 builder.Services.AddScoped<IMockErpStore, SqlServerMockErpStore>();
 builder.Services.AddScoped<IMockErpService, MockErpService>();
 builder.Services.AddSingleton<MockErpRequestValidator>();
@@ -93,6 +95,26 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
+if (demoStockWorkbookPath is not null)
+{
+    if (!app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "The --seed-demo-stocks command can run only in Development.");
+    }
+
+    await using var scope = app.Services.CreateAsyncScope();
+    var seeder = scope.ServiceProvider
+        .GetRequiredService<DemoErpStockExcelSeeder>();
+    var result = await seeder.SeedAsync(demoStockWorkbookPath);
+    var status = result.AlreadySeeded ? "AlreadySeeded" : "Seeded";
+    Console.WriteLine(
+        $"Demo ERP stock seed {status}: " +
+        $"{result.ProductCount} workbook products, " +
+        $"{result.InsertedCount} inserted stocks.");
+    return;
+}
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -106,5 +128,32 @@ app.UseAuthorization();
 app.MapControllers().RequireRateLimiting("MockErp");
 
 app.Run();
+
+static string? GetDemoStockWorkbookPath(string[] arguments)
+{
+    var indexes = arguments
+        .Select((value, index) => (value, index))
+        .Where(item => string.Equals(
+            item.value,
+            "--seed-demo-stocks",
+            StringComparison.Ordinal))
+        .Select(item => item.index)
+        .ToArray();
+
+    if (indexes.Length == 0)
+    {
+        return null;
+    }
+
+    if (indexes.Length != 1
+        || indexes[0] + 1 >= arguments.Length
+        || arguments[indexes[0] + 1].StartsWith("--", StringComparison.Ordinal))
+    {
+        throw new ArgumentException(
+            "The --seed-demo-stocks command requires exactly one explicit workbook path.");
+    }
+
+    return arguments[indexes[0] + 1];
+}
 
 public partial class Program;

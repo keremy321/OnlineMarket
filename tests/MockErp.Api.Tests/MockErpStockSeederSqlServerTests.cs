@@ -91,15 +91,15 @@ public sealed class MockErpStockSeederSqlServerTests(
         using var document = await JsonDocument.ParseAsync(stream);
 
         return document.RootElement
-            .GetProperty("products")
+            .GetProperty("Products")
             .EnumerateArray()
             .Select(product => new ExpectedProduct(
-                product.GetProperty("id").GetGuid(),
-                product.GetProperty("sku").GetString()!,
-                product.GetProperty("name").GetString()!,
-                product.GetProperty("unitType").GetByte(),
-                product.GetProperty("netContent").GetDecimal(),
-                product.GetProperty("initialStock").GetInt32()))
+                product.GetProperty("Id").GetGuid(),
+                product.GetProperty("Sku").GetString()!,
+                product.GetProperty("Name").GetString()!,
+                product.GetProperty("UnitType").GetByte(),
+                product.GetProperty("NetContent").GetDecimal(),
+                product.GetProperty("InitialStock").GetInt32()))
             .ToDictionary(product => product.Id);
     }
 
