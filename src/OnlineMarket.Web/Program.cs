@@ -86,14 +86,15 @@ builder.Services.AddHttpClient<IAiApiClient, ExternalAiApiClient>(client =>
 });
 
 // Configure HTTP Clients for External Services with Short Timeouts
-var recommendationApiUrl = builder.Configuration["Services:RecommendationApi"] ?? "http://localhost:5001";
+var recommendationApiUrl = builder.Configuration["Services:RecommendationApi"] ?? "http://localhost:5008";
 builder.Services.AddHttpClient<IRecommendationClient, RecommendationApiClient>(client =>
 {
     client.BaseAddress = new Uri(recommendationApiUrl);
     client.Timeout = TimeSpan.FromSeconds(3);
-});
+})
+    .AddHttpMessageHandler<RecommendationApiKeyHandler>();
 
-var erpIntegrationApiUrl = builder.Configuration["Services:ErpIntegrationApi"] ?? "http://localhost:5002";
+var erpIntegrationApiUrl = builder.Configuration["Services:ErpIntegrationApi"] ?? "http://localhost:5046";
 builder.Services.AddHttpClient<IErpIntegrationClient, ErpIntegrationApiClient>(client =>
 {
     client.BaseAddress = new Uri(erpIntegrationApiUrl);
@@ -108,7 +109,7 @@ builder.Services
     .Validate(
         options => !string.IsNullOrWhiteSpace(options.ApiKey),
         $"Configuration value '{RecommendationOutboxOptions.SectionName}:ApiKey' " +
-        "is required when Recommendation Outbox delivery is enabled.")
+        "is required when Recommendation service requests are enabled.")
     .ValidateOnStart();
 builder.Services.AddTransient<RecommendationApiKeyHandler>();
 builder.Services.AddHttpClient("RecommendationApi", client =>

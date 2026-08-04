@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -17,6 +18,27 @@ public sealed class RecommendationOutboxAuthenticationTests(
     OnlineMarketSqlServerFixture fixture)
 {
     private const string ApiKey = "test-only-recommendation-outbox-key";
+
+    [Fact]
+    public async Task Recommendation_query_client_includes_recommendation_api_key()
+    {
+        var recorder = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(Array.Empty<RecommendationItemDto>())
+        });
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var logs = new CapturingLogger<RecommendationApiClient>();
+        var client = new RecommendationApiClient(httpClient, logs);
+
+        var recommendations = await client.GetPopularRecommendationsAsync();
+
+        Assert.Empty(recommendations);
+        Assert.Equal("/api/v1/recommendations/popular", recorder.RequestPath);
+        Assert.Equal(ApiKey, recorder.ApiKey);
+        Assert.DoesNotContain(
+            logs.Entries,
+            entry => entry.Contains(ApiKey, StringComparison.Ordinal));
+    }
 
     [Fact]
     public async Task Product_delivery_includes_recommendation_api_key()
@@ -60,6 +82,19 @@ public sealed class RecommendationOutboxAuthenticationTests(
 
         Assert.True(result.Succeeded);
         Assert.Equal("/api/v1/integration/orders", recorder.RequestPath);
+        Assert.Null(recorder.ApiKey);
+    }
+
+    [Fact]
+    public async Task Unrelated_request_does_not_receive_recommendation_api_key()
+    {
+        var recorder = new RecordingHandler();
+        using var client = CreateRecommendationHttpClient(recorder, ApiKey);
+
+        using var response = await client.GetAsync("/api/v1/health");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("/api/v1/health", recorder.RequestPath);
         Assert.Null(recorder.ApiKey);
     }
 
@@ -125,6 +160,25 @@ public sealed class RecommendationOutboxAuthenticationTests(
         return new HttpOutboxDispatcher(
             new NamedClientFactory(recorder, apiKey),
             NullLogger<HttpOutboxDispatcher>.Instance);
+    }
+
+    private static HttpClient CreateRecommendationHttpClient(
+        RecordingHandler recorder,
+        string apiKey)
+    {
+        var authenticationHandler = new RecommendationApiKeyHandler(
+            Options.Create(new RecommendationOutboxOptions
+            {
+                ApiKey = apiKey
+            }))
+        {
+            InnerHandler = recorder
+        };
+
+        return new HttpClient(authenticationHandler, disposeHandler: false)
+        {
+            BaseAddress = new Uri("https://test.invalid")
+        };
     }
 
     private static ClaimedOutboxMessageDto CreateClaimedMessage(
