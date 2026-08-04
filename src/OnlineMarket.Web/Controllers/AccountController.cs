@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using OnlineMarket.Web.Application.Interfaces;
@@ -8,10 +9,17 @@ namespace OnlineMarket.Web.Controllers;
 public class AccountController : Controller
 {
     private readonly IAuthService _authService;
+    private readonly IChatHistoryStore _chatHistoryStore;
+    private readonly ILogger<AccountController> _logger;
 
-    public AccountController(IAuthService authService)
+    public AccountController(
+        IAuthService authService,
+        IChatHistoryStore chatHistoryStore,
+        ILogger<AccountController> logger)
     {
         _authService = authService;
+        _chatHistoryStore = chatHistoryStore;
+        _logger = logger;
     }
 
     [HttpGet]
@@ -36,18 +44,27 @@ public class AccountController : Controller
             return View(model);
         }
 
-        var result = await _authService.LoginAsync(model.Email, model.Password, model.RememberMe);
-        if (result.Succeeded)
+        try
         {
-            if (!string.IsNullOrEmpty(model.ReturnUrl) && Url.IsLocalUrl(model.ReturnUrl))
+            var result = await _authService.LoginAsync(model.Email, model.Password, model.RememberMe);
+            if (result.Succeeded)
             {
-                return Redirect(model.ReturnUrl);
+                if (!string.IsNullOrEmpty(model.ReturnUrl) && Url.IsLocalUrl(model.ReturnUrl))
+                {
+                    return Redirect(model.ReturnUrl);
+                }
+                return RedirectToAction("Index", "Catalog");
             }
-            return RedirectToAction("Index", "Catalog");
-        }
 
-        ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Giriş başarısız.");
-        return View(model);
+            ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Giriş başarısız.");
+            return View(model);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred during login for user {Email}.", model.Email);
+            ModelState.AddModelError(string.Empty, "Giriş sırasında beklenmeyen bir hata oluştu.");
+            return View(model);
+        }
     }
 
     [HttpGet]
@@ -72,14 +89,23 @@ public class AccountController : Controller
             return View(model);
         }
 
-        var result = await _authService.RegisterAsync(model.Email, model.Password, model.FirstName, model.LastName);
-        if (result.Succeeded)
+        try
         {
-            return RedirectToAction("Index", "Catalog");
-        }
+            var result = await _authService.RegisterAsync(model.Email, model.Password, model.FirstName, model.LastName);
+            if (result.Succeeded)
+            {
+                return RedirectToAction("Index", "Catalog");
+            }
 
-        ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Kayıt sırasında bir hata oluştu.");
-        return View(model);
+            ModelState.AddModelError(string.Empty, result.ErrorMessage ?? "Kayıt sırasında bir hata oluştu.");
+            return View(model);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred during registration for user {Email}.", model.Email);
+            ModelState.AddModelError(string.Empty, "Kayıt işlemi sırasında beklenmeyen bir hata oluştu.");
+            return View(model);
+        }
     }
 
     [HttpPost]
@@ -87,7 +113,35 @@ public class AccountController : Controller
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> Logout()
     {
-        await _authService.LogoutAsync();
+        Guid? customerId = null;
+
+        try
+        {
+            var userIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (Guid.TryParse(userIdValue, out var userId))
+            {
+                customerId = (await _authService.GetCustomerByUserIdAsync(userId))?.Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not resolve the customer while clearing chat history during logout.");
+        }
+
+        try
+        {
+            await _authService.LogoutAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred during logout.");
+        }
+
+        if (customerId.HasValue)
+        {
+            _chatHistoryStore.ClearAccountHistory(customerId.Value);
+        }
+
         return RedirectToAction("Index", "Catalog");
     }
 

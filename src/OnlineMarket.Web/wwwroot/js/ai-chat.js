@@ -14,8 +14,17 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
     }
 
-    let conversationId = localStorage.getItem('ai_chat_conv_id') || null;
+    const maxChatHistoryMessages = 5;
+    let conversationId = null;
     let isPending = false;
+    const chatHistory = [];
+
+    // A page load starts a new conversation. Remove IDs persisted by older versions.
+    try {
+        localStorage.removeItem('ai_chat_conv_id');
+    } catch {
+        // Storage can be unavailable in privacy-restricted browser contexts.
+    }
 
     // Toggle Chat Window
     launcherBtn.addEventListener('click', () => {
@@ -80,7 +89,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     message: messageText,
                     conversationId: conversationId,
-                    currentUrl: window.location.href
+                    currentUrl: window.location.href,
+                    history: chatHistory.slice(-maxChatHistoryMessages)
                 })
             });
 
@@ -94,8 +104,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.conversationId) {
                 conversationId = data.conversationId;
-                localStorage.setItem('ai_chat_conv_id', conversationId);
             }
+
+            chatHistory.push({ sender: 'user', text: messageText, timestampUtc: new Date().toISOString() });
+            if (data.reply) {
+                chatHistory.push({ sender: 'assistant', text: data.reply, timestampUtc: new Date().toISOString() });
+            }
+            trimChatHistory();
 
             appendBotMessage(data.reply, data.suggestedActions);
         } catch (err) {
@@ -170,6 +185,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function scrollToBottom() {
         chatBody.scrollTop = chatBody.scrollHeight;
+    }
+
+    function trimChatHistory() {
+        if (chatHistory.length > maxChatHistoryMessages) {
+            chatHistory.splice(0, chatHistory.length - maxChatHistoryMessages);
+        }
     }
 
     function getAntiForgeryToken() {

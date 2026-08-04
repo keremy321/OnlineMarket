@@ -14,26 +14,36 @@ public class CartController : Controller
     private readonly ICatalogService _catalogService;
     private readonly IRecommendationClient _recommendationClient;
     private readonly IAuthService _authService;
+    private readonly ILogger<CartController> _logger;
 
     public CartController(
         ICartService cartService,
         ICatalogService catalogService,
         IRecommendationClient recommendationClient,
-        IAuthService authService)
+        IAuthService authService,
+        ILogger<CartController> logger)
     {
         _cartService = cartService;
         _catalogService = catalogService;
         _recommendationClient = recommendationClient;
         _authService = authService;
+        _logger = logger;
     }
 
     private async Task<Guid?> GetCurrentCustomerIdAsync()
     {
-        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (Guid.TryParse(userIdStr, out var userId))
+        try
         {
-            var customer = await _authService.GetCustomerByUserIdAsync(userId);
-            return customer?.Id;
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (Guid.TryParse(userIdStr, out var userId))
+            {
+                var customer = await _authService.GetCustomerByUserIdAsync(userId);
+                return customer?.Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to resolve current customer ID.");
         }
         return null;
     }
@@ -41,38 +51,54 @@ public class CartController : Controller
     [HttpGet]
     public async Task<IActionResult> Index()
     {
-        var customerId = await GetCurrentCustomerIdAsync();
-        if (!customerId.HasValue) return RedirectToAction("Login", "Account");
-
-        var cart = await _cartService.GetOrCreateActiveCartAsync(customerId.Value);
-
-        var productIdsInCart = cart.Items.Select(i => i.ProductId).ToList();
-        var rawCartCompletion = new List<RecommendationItemDto>();
-        if (productIdsInCart.Any())
+        try
         {
-            rawCartCompletion = await _recommendationClient.GetCartCompletionRecommendationsAsync(productIdsInCart, 4);
-        }
+            var customerId = await GetCurrentCustomerIdAsync();
+            if (!customerId.HasValue) return RedirectToAction("Login", "Account");
 
-        var cartCompletionRecs = new List<RecommendationItemDto>();
-        foreach (var item in rawCartCompletion)
-        {
-            if (!productIdsInCart.Contains(item.ProductId))
+            var cart = await _cartService.GetOrCreateActiveCartAsync(customerId.Value);
+
+            var productIdsInCart = cart.Items.Select(i => i.ProductId).ToList();
+            var rawCartCompletion = new List<RecommendationItemDto>();
+            if (productIdsInCart.Any())
             {
-                var product = await _catalogService.GetProductByIdAsync(item.ProductId);
-                if (product != null && product.IsActive && product.IsInStock)
+                try
                 {
-                    cartCompletionRecs.Add(item with { ProductDetails = product });
+                    rawCartCompletion = await _recommendationClient.GetCartCompletionRecommendationsAsync(productIdsInCart, 4);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to fetch cart completion recommendations.");
                 }
             }
+
+            var cartCompletionRecs = new List<RecommendationItemDto>();
+            foreach (var item in rawCartCompletion)
+            {
+                if (!productIdsInCart.Contains(item.ProductId))
+                {
+                    var product = await _catalogService.GetProductByIdAsync(item.ProductId);
+                    if (product != null && product.IsActive && product.IsInStock)
+                    {
+                        cartCompletionRecs.Add(item with { ProductDetails = product });
+                    }
+                }
+            }
+
+            var viewModel = new CartIndexViewModel
+            {
+                Cart = cart,
+                CartCompletionRecommendations = cartCompletionRecs
+            };
+
+            return View(viewModel);
         }
-
-        var viewModel = new CartIndexViewModel
+        catch (Exception ex)
         {
-            Cart = cart,
-            CartCompletionRecommendations = cartCompletionRecs
-        };
-
-        return View(viewModel);
+            _logger.LogError(ex, "Error occurred in CartController.Index.");
+            TempData["ErrorMessage"] = "Sepet bilgileri yüklenirken bir sorun oluştu.";
+            return View(new CartIndexViewModel());
+        }
     }
 
     [HttpPost]
@@ -89,6 +115,7 @@ public class CartController : Controller
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Error adding product {ProductId} to cart for customer {CustomerId}.", productId, customerId);
             TempData["ErrorMessage"] = ex.Message;
         }
 
@@ -102,7 +129,15 @@ public class CartController : Controller
         var customerId = await GetCurrentCustomerIdAsync();
         if (!customerId.HasValue) return RedirectToAction("Login", "Account");
 
-        await _cartService.UpdateItemQuantityAsync(customerId.Value, cartItemId, quantity);
+        try
+        {
+            await _cartService.UpdateItemQuantityAsync(customerId.Value, cartItemId, quantity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating cart item {CartItemId} quantity for customer {CustomerId}.", cartItemId, customerId);
+            TempData["ErrorMessage"] = "Ürün miktarı güncellenirken bir hata oluştu.";
+        }
         return RedirectToAction(nameof(Index));
     }
 
@@ -113,8 +148,16 @@ public class CartController : Controller
         var customerId = await GetCurrentCustomerIdAsync();
         if (!customerId.HasValue) return RedirectToAction("Login", "Account");
 
-        await _cartService.RemoveItemFromCartAsync(customerId.Value, cartItemId);
-        TempData["SuccessMessage"] = "Ürün sepetten çıkarıldı.";
+        try
+        {
+            await _cartService.RemoveItemFromCartAsync(customerId.Value, cartItemId);
+            TempData["SuccessMessage"] = "Ürün sepetten çıkarıldı.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error removing cart item {CartItemId} for customer {CustomerId}.", cartItemId, customerId);
+            TempData["ErrorMessage"] = "Ürün sepetten çıkarılırken bir hata oluştu.";
+        }
         return RedirectToAction(nameof(Index));
     }
 
@@ -125,8 +168,16 @@ public class CartController : Controller
         var customerId = await GetCurrentCustomerIdAsync();
         if (!customerId.HasValue) return RedirectToAction("Login", "Account");
 
-        await _cartService.ClearCartAsync(customerId.Value);
-        TempData["SuccessMessage"] = "Sepetiniz temizlendi.";
+        try
+        {
+            await _cartService.ClearCartAsync(customerId.Value);
+            TempData["SuccessMessage"] = "Sepetiniz temizlendi.";
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error clearing cart for customer {CustomerId}.", customerId);
+            TempData["ErrorMessage"] = "Sepet temizlenirken bir hata oluştu.";
+        }
         return RedirectToAction(nameof(Index));
     }
 }

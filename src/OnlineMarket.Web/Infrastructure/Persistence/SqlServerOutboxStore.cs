@@ -37,6 +37,28 @@ public sealed class SqlServerOutboxStore : IOutboxStore
         var boundedBatchSize = Math.Min(batchSize, 100);
         var expiredLockUtc = claimedAtUtc - LockTimeout;
         var claimedIds = new List<long>(boundedBatchSize);
+        if (!_dbContext.Database.IsSqlServer())
+        {
+            var eligible = await _dbContext.OutboxMessages
+                .Where(m => m.AttemptCount < MaximumAttempts
+                    && m.AvailableAtUtc <= claimedAtUtc
+                    && (m.NextAttemptAtUtc == null || m.NextAttemptAtUtc <= claimedAtUtc)
+                    && (m.Status == OutboxStatus.Pending || m.Status == OutboxStatus.Retrying || (m.Status == OutboxStatus.Processing && (m.LockedAtUtc == null || m.LockedAtUtc < expiredLockUtc))))
+                .OrderBy(m => m.Id)
+                .Take(boundedBatchSize)
+                .ToListAsync(cancellationToken);
+
+            foreach (var message in eligible)
+            {
+                message.Status = OutboxStatus.Processing;
+                message.LockedAtUtc = claimedAtUtc;
+                message.LockedBy = workerId;
+                claimedIds.Add(message.Id);
+            }
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+        else
+        {
 
         await using (var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken))
         {
@@ -88,6 +110,7 @@ public sealed class SqlServerOutboxStore : IOutboxStore
 
             await reader.DisposeAsync();
             await transaction.CommitAsync(cancellationToken);
+        }
         }
 
         if (claimedIds.Count == 0)

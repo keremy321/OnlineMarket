@@ -25,11 +25,15 @@ builder.Services.AddDbContext<OnlineMarketDbContext>(options =>
 {
     if (string.IsNullOrWhiteSpace(connectionString) || string.Equals(connectionString, "InMemory", StringComparison.OrdinalIgnoreCase))
     {
-        options.UseInMemoryDatabase("OnlineMarketDb");
+        options.UseInMemoryDatabase("OnlineMarketDb")
+               .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning));
     }
     else
     {
-        options.UseSqlServer(connectionString);
+        options.UseSqlServer(connectionString, sqlOptions =>
+        {
+            sqlOptions.EnableRetryOnFailure(maxRetryCount: 3, maxRetryDelay: TimeSpan.FromSeconds(5), errorNumbersToAdd: null);
+        });
     }
 });
 
@@ -63,6 +67,7 @@ builder.Services.AddScoped<ICartService, CartService>();
 builder.Services.AddScoped<ICheckoutService, CheckoutService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IAdminQueryService, AdminQueryService>();
+builder.Services.AddSingleton<IChatHistoryStore, InMemoryChatHistoryStore>();
 builder.Services.AddScoped<IAiSupportService, AiSupportService>();
 builder.Services.AddScoped<IOutboxService, OutboxService>();
 builder.Services.AddScoped<IStockMutationService, SqlServerStockMutationService>();
@@ -203,8 +208,9 @@ app.MapControllerRoute(
     pattern: "{controller=Home}/{action=Index}/{id?}");
 
 // Auto-seed InMemory database for local preview
-using (var scope = app.Services.CreateScope())
+try
 {
+    using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<OnlineMarketDbContext>();
     if (dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.InMemory")
     {
@@ -217,6 +223,10 @@ using (var scope = app.Services.CreateScope())
             await seeder.SeedAsync(catalogSeedPath, credentials);
         }
     }
+}
+catch (Exception ex)
+{
+    app.Logger.LogWarning(ex, "Failed to auto-seed database on startup.");
 }
 
 app.Run();
