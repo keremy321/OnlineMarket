@@ -92,9 +92,32 @@ public class AuthService : IAuthService
 
     public async Task<Customer?> GetCustomerByUserIdAsync(Guid userId)
     {
-        return await _dbContext.Customers
+        var customer = await _dbContext.Customers
             .Include(c => c.Addresses)
             .FirstOrDefaultAsync(c => c.UserId == userId);
+
+        if (customer == null)
+        {
+            var user = await _userManager.FindByIdAsync(userId.ToString());
+            if (user != null)
+            {
+                var nameParts = (user.UserName ?? "User").Split('@')[0];
+                customer = new Customer
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user.Id,
+                    FirstName = nameParts,
+                    LastName = "User",
+                    IsActive = true,
+                    CreatedAtUtc = DateTime.UtcNow,
+                    UpdatedAtUtc = DateTime.UtcNow
+                };
+                _dbContext.Customers.Add(customer);
+                await _dbContext.SaveChangesAsync();
+            }
+        }
+
+        return customer;
     }
 
     public async Task<Customer?> GetCustomerByEmailAsync(string email)

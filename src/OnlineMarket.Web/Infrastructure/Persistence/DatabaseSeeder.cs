@@ -101,6 +101,23 @@ public sealed class DatabaseSeeder
             ThrowIfFailed(roleResult, "Could not assign the configured development admin role.");
         }
 
+        var existingCustomer = await _dbContext.Customers.FirstOrDefaultAsync(c => c.UserId == adminUser.Id);
+        if (existingCustomer is null)
+        {
+            var customer = new Customer
+            {
+                Id = Guid.NewGuid(),
+                UserId = adminUser.Id,
+                FirstName = "Admin",
+                LastName = "User",
+                IsActive = true,
+                CreatedAtUtc = DateTime.UtcNow,
+                UpdatedAtUtc = DateTime.UtcNow
+            };
+            _dbContext.Customers.Add(customer);
+            await _dbContext.SaveChangesAsync();
+        }
+
         return adminUser;
     }
 

@@ -80,6 +80,12 @@ body {
 /* Category Sub-nav links */
 .category-subnav {
   border-top: 1px solid rgba(226, 232, 240, 0.6);
+  position: relative;
+}
+
+.category-subnav-container {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
 }
 
 .nav-sublink {
@@ -88,6 +94,7 @@ body {
   color: var(--text-secondary);
   text-decoration: none;
   white-space: nowrap;
+  flex-shrink: 0;
   padding: 0.4rem 0.8rem;
   border-radius: 20px;
   transition: all 0.2s ease;
@@ -96,6 +103,41 @@ body {
 .nav-sublink:hover, .nav-sublink.active {
   color: var(--primary-color);
   background-color: var(--primary-light);
+}
+
+.subnav-scroll-btn {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 10;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  opacity: 0.9;
+}
+
+.subnav-scroll-btn:hover {
+  background: var(--primary-color);
+  color: #ffffff;
+  box-shadow: var(--shadow-md);
+  opacity: 1;
+}
+
+.subnav-scroll-btn.left {
+  left: 0.5rem;
+}
+
+.subnav-scroll-btn.right {
+  right: 0.5rem;
 }
 
 /* Hero Section */

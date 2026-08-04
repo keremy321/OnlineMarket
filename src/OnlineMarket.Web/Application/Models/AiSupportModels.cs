@@ -3,7 +3,8 @@ namespace OnlineMarket.Web.Application.Models;
 public record AiSupportRequestDto(
     string Message,
     string? ConversationId = null,
-    string? CurrentUrl = null);
+    string? CurrentUrl = null,
+    List<AiChatMessageDto>? History = null);
 
 public record AiSupportResponseDto(
     string Reply,

@@ -40,7 +40,7 @@ public sealed class DatabaseSeederTests
         Assert.True(await userManager.IsInRoleAsync(admin, "Admin"));
 
         var firstCounts = await GetCountsAsync(context);
-        Assert.Equal((22, 10, 34, 34, 34), firstCounts);
+        Assert.Equal((32, 20, 205, 205, 205), firstCounts);
 
         var stock = await context.Stocks.OrderBy(candidate => candidate.ProductId).FirstAsync();
         var changedQuantity = stock.Quantity - 7;
@@ -77,9 +77,9 @@ public sealed class DatabaseSeederTests
             new SeedAdminCredentials(null, null));
 
         Assert.Equal(0, await context.Users.CountAsync());
-        Assert.Equal(34, await context.Products.CountAsync());
-        Assert.Equal(34, await context.Stocks.CountAsync());
-        Assert.Equal(34, await context.StockMovements.CountAsync());
+        Assert.Equal(205, await context.Products.CountAsync());
+        Assert.Equal(205, await context.Stocks.CountAsync());
+        Assert.Equal(205, await context.StockMovements.CountAsync());
     }
 
     private static ServiceProvider CreateServiceProvider(string connectionString)

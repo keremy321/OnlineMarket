@@ -13,6 +13,7 @@ public class AiSupportService : IAiSupportService
     private readonly IRecommendationClient _recommendationClient;
     private readonly IAiApiClient? _aiApiClient;
     private readonly IOptions<AiAssistantOptions>? _options;
+    private readonly IChatHistoryStore _chatHistoryStore;
     private readonly ILogger<AiSupportService> _logger;
 
     public AiSupportService(
@@ -20,7 +21,7 @@ public class AiSupportService : IAiSupportService
         IOrderService orderService,
         IRecommendationClient recommendationClient,
         ILogger<AiSupportService> logger)
-        : this(catalogService, orderService, recommendationClient, null, null, logger)
+        : this(catalogService, orderService, recommendationClient, null, null, new InMemoryChatHistoryStore(), logger)
     {
     }
 
@@ -31,12 +32,25 @@ public class AiSupportService : IAiSupportService
         IAiApiClient? aiApiClient,
         IOptions<AiAssistantOptions>? options,
         ILogger<AiSupportService> logger)
+        : this(catalogService, orderService, recommendationClient, aiApiClient, options, new InMemoryChatHistoryStore(), logger)
+    {
+    }
+
+    public AiSupportService(
+        ICatalogService catalogService,
+        IOrderService orderService,
+        IRecommendationClient recommendationClient,
+        IAiApiClient? aiApiClient,
+        IOptions<AiAssistantOptions>? options,
+        IChatHistoryStore chatHistoryStore,
+        ILogger<AiSupportService> logger)
     {
         _catalogService = catalogService;
         _orderService = orderService;
         _recommendationClient = recommendationClient;
         _aiApiClient = aiApiClient;
         _options = options;
+        _chatHistoryStore = chatHistoryStore ?? new InMemoryChatHistoryStore();
         _logger = logger;
     }
 
@@ -58,61 +72,140 @@ public class AiSupportService : IAiSupportService
                 SuggestedActions: GetDefaultSuggestions());
         }
 
+        // Sync client-provided history if available
+        if (request.History != null && request.History.Count > 0)
+        {
+            var existingHistory = GetHistory(customerId, conversationId);
+            if (existingHistory.Count == 0)
+            {
+                foreach (var msg in request.History)
+                {
+                    AddHistoryMessage(customerId, conversationId, msg.Sender, msg.Text);
+                }
+            }
+        }
+
+        // Safe message truncation (OWASP LLM10: DoS Prevention)
+        var sanitizedInput = request.Message.Trim();
+        if (sanitizedInput.Length > 1000)
+        {
+            sanitizedInput = sanitizedInput[..1000];
+        }
+
+        // OWASP Pre-filtering: Prompt Injection & Source Code leakage protection
+        if (IsSecurityViolationQuery(sanitizedInput))
+        {
+            var refusalResponse = new AiSupportResponseDto(
+                Reply: "Güvenlik politikalarımız gereği kaynak kodları, sistem mimarisi veya teknik yapılandırmalar paylaşılamaz. Yalnızca OnlineMarket ürünleri, sipariş takibi, kargo ve ödeme süreçleri hakkında yardımcı olabilirim. Size bu konularda nasıl yardımcı olabilirim? 🛒",
+                ConversationId: conversationId,
+                TimestampUtc: DateTime.UtcNow,
+                SuggestedActions: GetDefaultSuggestions());
+
+            AddHistoryMessage(customerId, conversationId, "user", sanitizedInput);
+            AddHistoryMessage(customerId, conversationId, "assistant", refusalResponse.Reply);
+            return refusalResponse;
+        }
+
+        // Record user message into chat history store
+        AddHistoryMessage(customerId, conversationId, "user", sanitizedInput);
+
+        var sanitizedRequest = request with { Message = sanitizedInput };
+
         // Try External LLM API if configured
-        var apiResult = await TryProcessWithExternalApiAsync(request, conversationId, customerId, cancellationToken);
+        var apiResult = await TryProcessWithExternalApiAsync(sanitizedRequest, conversationId, customerId, cancellationToken);
         if (apiResult != null)
         {
+            AddHistoryMessage(customerId, conversationId, "assistant", apiResult.Reply);
             return apiResult;
         }
 
         // Fallback to Rule-based Assistant Engine
-        var message = request.Message.Trim().ToLowerInvariant();
+        var message = sanitizedInput.ToLowerInvariant();
+        AiSupportResponseDto response;
 
         try
         {
-            // 1. Order tracking & status
-            if (message.Contains("sipariş") || message.Contains("kargom") || message.Contains("nerede") || message.Contains("takip"))
+            // 1. Context-aware follow-up handling (e.g. "seç", "ürünleri seç", "evet", "tamam")
+            var lastAssistantMsg = GetLastAssistantMessage(customerId, conversationId);
+            if (IsFollowUpSelectionIntent(message) && lastAssistantMsg != null)
             {
-                return await HandleOrderQueryAsync(conversationId, customerId);
+                var selectionResponse = await HandleContextualSelectionAsync(lastAssistantMsg.Text, conversationId);
+                if (selectionResponse != null)
+                {
+                    AddHistoryMessage(customerId, conversationId, "assistant", selectionResponse.Reply);
+                    return selectionResponse;
+                }
             }
 
-            // 2. Shipping & cargo policy
+            // 2. Meal / Dinner Planning query
+            if (message.Contains("yemek") || message.Contains("akşam") || message.Contains("menü") || message.Contains("planla"))
+            {
+                response = new AiSupportResponseDto(
+                    Reply: "Merhaba! Bugün akşam için hızlı ve lezzetli bir menü önerisi: **Izgara Tavuk Göğsü**, **Haşlanmış Sebzeler** ve **Taze Yoğurtlu Salata**. 🍗🥗\nİsterseniz katalogdan bu menüye uygun ürünleri seçip listeleyebilirim!",
+                    ConversationId: conversationId,
+                    TimestampUtc: DateTime.UtcNow,
+                    SuggestedActions: new List<string> { "Ürünleri seç", "Popüler ürünler", "Kargo ücretleri nedir?" });
+
+                AddHistoryMessage(customerId, conversationId, "assistant", response.Reply);
+                return response;
+            }
+
+            // 3. Order tracking & status
+            if (message.Contains("sipariş") || message.Contains("kargom") || message.Contains("nerede") || message.Contains("takip"))
+            {
+                response = await HandleOrderQueryAsync(conversationId, customerId);
+                AddHistoryMessage(customerId, conversationId, "assistant", response.Reply);
+                return response;
+            }
+
+            // 4. Shipping & cargo policy
             if (message.Contains("kargo") || message.Contains("teslimat") || message.Contains("ücret") || message.Contains("gönderim"))
             {
-                return new AiSupportResponseDto(
-                    Reply: "🚀 **Kargo ve Teslimat Bilgileri**:\n- **500 ₺ ve üzeri** siparişlerinizde **Ücretsiz Ekspres Kargo** uygulanır.\n- 500 ₺ altı siparişlerde standart kargo ücreti 49.90 ₺'dir.\n- Siparişleriniz aynı gün özenle paketlenip kargoya teslim edilmektedir.",
+                response = new AiSupportResponseDto(
+                    Reply: "🚀 500 ₺ ve üzeri siparişlerinizde Ekspres Kargo ücretsizdir; 500 ₺ altı siparişlerde standart kargo ücreti 49.90 ₺'dir.",
                     ConversationId: conversationId,
                     TimestampUtc: DateTime.UtcNow,
                     SuggestedActions: new List<string> { "Sipariş takibi", "Popüler ürünler", "İade koşulları" });
+
+                AddHistoryMessage(customerId, conversationId, "assistant", response.Reply);
+                return response;
             }
 
-            // 3. Payment methods & invoicing
+            // 5. Payment methods & invoicing
             if (message.Contains("ödeme") || message.Contains("kredi kartı") || message.Contains("taksit") || message.Contains("fatura") || message.Contains("banka"))
             {
-                return new AiSupportResponseDto(
-                    Reply: "💳 **Ödeme ve Fatura**:\n- Tüm Kredi Kartı ve Banka Kartları ile güvenle ödeme yapabilirsiniz.\n- Ödemeleriniz OWASP güvenlik standartlarında 256-bit SSL korumalı altyapı ile gerçekleşir.\n- Sipariş faturanız Uyumsoft ERP entegrasyonu ile otomatik olarak oluşturulup e-posta adresinize gönderilir.",
+                response = new AiSupportResponseDto(
+                    Reply: "💳 Tüm kredi ve banka kartları ile 256-bit SSL korumalı altyapımız üzerinden güvenle ödeme yapabilirsiniz.",
                     ConversationId: conversationId,
                     TimestampUtc: DateTime.UtcNow,
                     SuggestedActions: new List<string> { "Kargo ücretleri nedir?", "Popüler ürünler" });
+
+                AddHistoryMessage(customerId, conversationId, "assistant", response.Reply);
+                return response;
             }
 
-            // 4. Returns & cancellation
+            // 6. Returns & cancellation
             if (message.Contains("iade") || message.Contains("iptal") || message.Contains("değişim") || message.Contains("hasarlı") || message.Contains("bozuk"))
             {
-                return new AiSupportResponseDto(
-                    Reply: "🔄 **İade ve Değişim Politikamız**:\n- Ürünlerinizi teslim aldıktan sonra **14 gün** içerisinde iade edebilirsiniz.\n- Taze gıda ve soğuk zincir ürünlerinde hasarlı teslimat durumunda koşulsuz anında değişim yapılmaktadır.\n- İade sürecini Hesabım > Siparişlerim sayfasından başlatabilirsiniz.",
+                response = new AiSupportResponseDto(
+                    Reply: "🔄 Ürünlerinizi teslim aldıktan sonra 14 gün içerisinde Hesabım > Siparişlerim sayfasından kolayca iade edebilirsiniz.",
                     ConversationId: conversationId,
                     TimestampUtc: DateTime.UtcNow,
                     SuggestedActions: new List<string> { "Sipariş takibi", "Müşteri Hizmetleri" });
+
+                AddHistoryMessage(customerId, conversationId, "assistant", response.Reply);
+                return response;
             }
 
-            // 5. Popular recommendations request
+            // 7. Popular recommendations request
             if (message.Contains("tavsiye") || message.Contains("öneri") || message.Contains("popüler") || message.Contains("en çok satan") || message.Contains("trend"))
             {
-                return await HandleRecommendationQueryAsync(conversationId);
+                response = await HandleRecommendationQueryAsync(conversationId);
+                AddHistoryMessage(customerId, conversationId, "assistant", response.Reply);
+                return response;
             }
 
-            // 6. Product search / catalog lookup query
+            // 8. Product search / catalog lookup query
             var isProductSearch = message.Contains("ürün") || message.Contains("meyve") || message.Contains("sebze") ||
                                   message.Contains("süt") || message.Contains("organik") || message.Contains("fiyat") ||
                                   message.Contains("stok") || message.Contains("var mı") || message.Contains("ara");
@@ -122,16 +215,20 @@ public class AiSupportService : IAiSupportService
                 var productSearchReply = await HandleProductSearchQueryAsync(request.Message, conversationId);
                 if (productSearchReply != null)
                 {
+                    AddHistoryMessage(customerId, conversationId, "assistant", productSearchReply.Reply);
                     return productSearchReply;
                 }
             }
 
-            // 7. General greeting & default response
-            return new AiSupportResponseDto(
-                Reply: "Merhaba! ben **OnlineMarket Akıllı AI Asistanı** 🤖\nSize nasıl yardımcı olabilirim? Aşağıdaki hızlı konulardan birini seçebilir veya sormak istediğiniz ürünü/konuyu doğrudan yazabilirsiniz.",
+            // 9. General greeting & default response
+            response = new AiSupportResponseDto(
+                Reply: "Merhaba! OnlineMarket Akıllı AI Asistanıyım, size ürünlerimiz, siparişleriniz veya kargo süreçlerinizde nasıl yardımcı olabilirim? 🤖",
                 ConversationId: conversationId,
                 TimestampUtc: DateTime.UtcNow,
                 SuggestedActions: GetDefaultSuggestions());
+
+            AddHistoryMessage(customerId, conversationId, "assistant", response.Reply);
+            return response;
         }
         catch (Exception ex)
         {
@@ -144,6 +241,28 @@ public class AiSupportService : IAiSupportService
                 Success: false,
                 ErrorMessage: ex.Message);
         }
+    }
+
+    private void AddHistoryMessage(Guid? accountId, string conversationId, string sender, string text)
+    {
+        if (accountId.HasValue)
+        {
+            _chatHistoryStore.AddMessage(accountId.Value, conversationId, sender, text);
+        }
+    }
+
+    private List<AiChatMessageDto> GetHistory(Guid? accountId, string conversationId)
+    {
+        return accountId.HasValue
+            ? _chatHistoryStore.GetHistory(accountId.Value, conversationId)
+            : new List<AiChatMessageDto>();
+    }
+
+    private AiChatMessageDto? GetLastAssistantMessage(Guid? accountId, string conversationId)
+    {
+        return accountId.HasValue
+            ? _chatHistoryStore.GetLastAssistantMessage(accountId.Value, conversationId)
+            : null;
     }
 
     private async Task<AiSupportResponseDto?> TryProcessWithExternalApiAsync(
@@ -201,16 +320,37 @@ public class AiSupportService : IAiSupportService
                 contextBuilder.AppendLine($"\n[Katalog İlgili Ürünler]: {string.Join("; ", topMatches)}");
             }
 
+            contextBuilder.AppendLine("\n[MUTLAK KURAL - KISA CEVAP ZORUNLULUĞU]:");
+            contextBuilder.AppendLine("Yanıtın KESİNLİKLE madde işareti (•, -), liste, alt başlık veya alternatif öneri paragrafları İÇEREMEZ. Sadece 1-2 cümlelik (en fazla 25 kelime) tek bir doğrudan cevap ver.");
+
             var messages = new List<AiChatMessage>
             {
-                new("system", contextBuilder.ToString()),
-                new("user", request.Message)
+                new("system", contextBuilder.ToString())
             };
+
+            // Include multi-turn conversation history for context memory
+            var history = GetHistory(customerId, conversationId);
+            foreach (var histMsg in history)
+            {
+                // Do not re-append the current user message if it's already the last item
+                if (histMsg.Text == request.Message && histMsg == history.LastOrDefault())
+                    continue;
+
+                var role = string.Equals(histMsg.Sender, "user", StringComparison.OrdinalIgnoreCase) ? "user" : "assistant";
+                messages.Add(new AiChatMessage(role, histMsg.Text));
+            }
+
+            messages.Add(new AiChatMessage("user", request.Message));
+
+            var isReasoningModel = config.Model.Contains("gpt-5", StringComparison.OrdinalIgnoreCase) ||
+                                   config.Model.StartsWith("o1", StringComparison.OrdinalIgnoreCase) ||
+                                   config.Model.StartsWith("o3", StringComparison.OrdinalIgnoreCase);
 
             var apiRequest = new AiApiCompletionRequest(
                 Model: config.Model,
                 Messages: messages,
-                Temperature: config.Temperature);
+                Temperature: isReasoningModel ? null : config.Temperature,
+                MaxCompletionTokens: isReasoningModel ? 2500 : 800);
 
             var apiResponse = await _aiApiClient.GenerateCompletionAsync(apiRequest, cancellationToken);
             var choice = apiResponse?.Choices?.FirstOrDefault();
@@ -223,10 +363,62 @@ public class AiSupportService : IAiSupportService
                     TimestampUtc: DateTime.UtcNow,
                     SuggestedActions: GetDefaultSuggestions());
             }
+
+            _logger.LogWarning("External AI API response choice content was null/empty. Choice finish_reason: {FinishReason}", choice?.FinishReason);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to get AI completion from external API provider. Falling back to rule engine.");
+        }
+
+        return null;
+    }
+
+    private static bool IsFollowUpSelectionIntent(string message)
+    {
+        var clean = message.Trim().ToLowerInvariant();
+        return clean is "seç" or "seçeyim" or "ürünleri seç" or "menüyü seç" or "evet" or "tamam" or "ürünleri getir" or "listeleyin" or "ürün seç";
+    }
+
+    private async Task<AiSupportResponseDto?> HandleContextualSelectionAsync(string lastAssistantText, string conversationId)
+    {
+        var lowerLast = lastAssistantText.ToLowerInvariant();
+
+        // Check if last response offered menu or catalog product selection
+        if (lowerLast.Contains("menü") || lowerLast.Contains("tavuk") || lowerLast.Contains("sebze") || lowerLast.Contains("salata") || lowerLast.Contains("katalogdan ürünleri seçeyim"))
+        {
+            // Search catalog for dinner menu items (Tavuk, Sebze, Yoğurt, etc.)
+            var filter = new ProductFilterDto(null, null, null, null, null, true, "newest");
+            var allProducts = await _catalogService.GetProductsAsync(filter);
+
+            var selectedProducts = allProducts.Where(p =>
+                p.Name.Contains("tavuk", StringComparison.OrdinalIgnoreCase) ||
+                p.Name.Contains("sebze", StringComparison.OrdinalIgnoreCase) ||
+                p.Name.Contains("yoğurt", StringComparison.OrdinalIgnoreCase) ||
+                p.Name.Contains("elma", StringComparison.OrdinalIgnoreCase) ||
+                p.CategoryName.Contains("meyve", StringComparison.OrdinalIgnoreCase) ||
+                p.CategoryName.Contains("süt", StringComparison.OrdinalIgnoreCase) ||
+                p.CategoryName.Contains("et", StringComparison.OrdinalIgnoreCase)
+            ).Take(4).ToList();
+
+            if (!selectedProducts.Any())
+            {
+                selectedProducts = allProducts.Take(3).ToList();
+            }
+
+            if (selectedProducts.Any())
+            {
+                var productLines = selectedProducts.Select(p => $"• **{p.Name}** — {p.Price:N2} ₺ ({p.CategoryName})");
+                var replyText = "🍽️ **Akşam Yemeği Menünüz İçin Seçtiğim Ürünler**:\n\n" +
+                                string.Join("\n", productLines) +
+                                "\n\nBu ürünleri sepetinize ekleyerek akşam yemeğinizi pratik bir şekilde hazırlayabilirsiniz! 🛒";
+
+                return new AiSupportResponseDto(
+                    Reply: replyText,
+                    ConversationId: conversationId,
+                    TimestampUtc: DateTime.UtcNow,
+                    SuggestedActions: new List<string> { "Popüler ürünler", "Kargo ücretleri nedir?", "Sipariş takibi" });
+            }
         }
 
         return null;
@@ -370,5 +562,24 @@ public class AiSupportService : IAiSupportService
             "Popüler ürün önerileri",
             "İade ve Değişim"
         };
+    }
+
+    private static bool IsSecurityViolationQuery(string input)
+    {
+        var lower = input.ToLowerInvariant();
+        return lower.Contains("system prompt") ||
+               lower.Contains("sistem prompt") ||
+               lower.Contains("ignore previous instructions") ||
+               lower.Contains("önceki talimatları unut") ||
+               lower.Contains("developer mode") ||
+               lower.Contains("geliştirici modu") ||
+               lower.Contains("dan mode") ||
+               lower.Contains("kaynak kod") ||
+               lower.Contains("source code") ||
+               lower.Contains("connection string") ||
+               lower.Contains("veritabanı şifre") ||
+               lower.Contains("db password") ||
+               lower.Contains("api key") ||
+               lower.Contains("secret key");
     }
 }
