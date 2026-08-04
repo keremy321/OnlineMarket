@@ -30,6 +30,9 @@
     <Content Include="..\..\scripts\seed\catalog.v1.json"
              Link="Seed\catalog.v1.json"
              CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\scripts\seed\demo_erp_veritabani.xlsx"
+             Link="Seed\demo_erp_veritabani.xlsx"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

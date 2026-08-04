@@ -5,11 +5,16 @@ using OnlineMarket.Web.Application.Options;
 using OnlineMarket.Web.Application.Services;
 using OnlineMarket.Web.Domain.Entities;
 using OnlineMarket.Web.Infrastructure.Http;
+using OnlineMarket.Web.Infrastructure.Importing;
 using OnlineMarket.Web.Infrastructure.Persistence;
 using OnlineMarket.Web.Infrastructure.Workers;
 
 var seedDevelopmentData = args.Contains(
     "--seed-development-data",
+    StringComparer.OrdinalIgnoreCase);
+var importDemoExcelPath = GetOptionValue(args, "--import-demo-excel");
+var emitHistoricalErpEvents = args.Contains(
+    "--emit-historical-erp-events",
     StringComparer.OrdinalIgnoreCase);
 var builder = WebApplication.CreateBuilder(args);
 
@@ -65,6 +70,7 @@ builder.Services.AddScoped<IOrderNumberGenerator, SqlServerOrderNumberGenerator>
 builder.Services.AddScoped<IOutboxStore, SqlServerOutboxStore>();
 builder.Services.AddScoped<IOutboxDispatcher, HttpOutboxDispatcher>();
 builder.Services.AddScoped<DatabaseSeeder>();
+builder.Services.AddScoped<DemoExcelImporter>();
 
 // Configure AI Assistant Options & API Client
 builder.Services.Configure<AiAssistantOptions>(builder.Configuration.GetSection(AiAssistantOptions.SectionName));
@@ -108,6 +114,46 @@ builder.Services.AddHostedService<OutboxBackgroundWorker>();
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
+
+if (importDemoExcelPath is not null)
+{
+    if (!app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException(
+            "The demo Excel import command is available only in the Development environment.");
+    }
+
+    using var scope = app.Services.CreateScope();
+    var dbContext = scope.ServiceProvider.GetRequiredService<OnlineMarketDbContext>();
+    if (!dbContext.Database.IsSqlServer())
+    {
+        throw new InvalidOperationException(
+            "The demo Excel import command requires an OnlineMarketDb SQL Server connection.");
+    }
+
+    if ((await dbContext.Database.GetPendingMigrationsAsync()).Any())
+    {
+        throw new InvalidOperationException(
+            "Apply OnlineMarketDb migrations with the controlled database tooling before running the demo Excel import command.");
+    }
+
+    var customerPassword = app.Configuration["DemoImport:CustomerPassword"];
+    if (string.IsNullOrWhiteSpace(customerPassword))
+    {
+        throw new InvalidOperationException(
+            "DemoImport:CustomerPassword must be configured for the demo Excel import command.");
+    }
+
+    var workbookPath = Path.GetFullPath(
+        importDemoExcelPath,
+        Directory.GetCurrentDirectory());
+    var importer = scope.ServiceProvider.GetRequiredService<DemoExcelImporter>();
+    await importer.ImportAsync(
+        workbookPath,
+        customerPassword,
+        emitHistoricalErpEvents);
+    return;
+}
 
 if (seedDevelopmentData)
 {
@@ -174,3 +220,34 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.Run();
+
+static string? GetOptionValue(string[] commandLineArguments, string optionName)
+{
+    var indexes = commandLineArguments
+        .Select((value, index) => (value, index))
+        .Where(candidate => string.Equals(
+            candidate.value,
+            optionName,
+            StringComparison.OrdinalIgnoreCase))
+        .Select(candidate => candidate.index)
+        .ToArray();
+
+    if (indexes.Length == 0)
+    {
+        return null;
+    }
+
+    if (indexes.Length > 1)
+    {
+        throw new ArgumentException($"Command option '{optionName}' may be supplied only once.");
+    }
+
+    var valueIndex = indexes[0] + 1;
+    if (valueIndex >= commandLineArguments.Length
+        || commandLineArguments[valueIndex].StartsWith("--", StringComparison.Ordinal))
+    {
+        throw new ArgumentException($"Command option '{optionName}' requires a workbook path.");
+    }
+
+    return commandLineArguments[valueIndex];
+}
