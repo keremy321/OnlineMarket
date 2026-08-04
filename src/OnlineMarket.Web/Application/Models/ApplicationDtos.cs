@@ -167,9 +167,10 @@ public record ErpOrderTransferStatusDto(
 
 public record RecommendationItemDto(
     Guid ProductId,
+    [property: System.Text.Json.Serialization.JsonPropertyName("reasonText")]
     string Reason,
     decimal Score,
-    ProductDto? ProductDetails
+    ProductDto? ProductDetails = null
 );
 
 public sealed record AdminDashboardDto(

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Recommendation.Api.Application.Interfaces;
+using Recommendation.Api.Application.Options;
 using Recommendation.Api.Application.Services;
 using Recommendation.Api.Contracts;
 using Recommendation.Api.Infrastructure.Http;
@@ -27,8 +28,22 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IRecommendationEventIngestionService,
     RecommendationEventIngestionService>();
+builder.Services.AddScoped<
+    IPopularityRecommendationStore,
+    SqlServerPopularityRecommendationStore>();
+builder.Services.AddScoped<
+    IPopularityRecommendationService,
+    PopularityRecommendationService>();
 builder.Services.AddSingleton<RecommendationEventValidator>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services
+    .AddOptions<PopularityRecommendationOptions>()
+    .Bind(builder.Configuration.GetSection(
+        PopularityRecommendationOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        $"Configuration section '{PopularityRecommendationOptions.SectionName}' is invalid.")
+    .ValidateOnStart();
 builder.Services
     .AddAuthentication(ApiKeyDefaults.Scheme)
     .AddScheme<ApiKeyAuthenticationOptions, ApiKeyAuthenticationHandler>(
