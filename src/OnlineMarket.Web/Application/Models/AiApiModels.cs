@@ -1,21 +1,24 @@
+using System.Text.Json.Serialization;
+
 namespace OnlineMarket.Web.Application.Models;
 
 public record AiChatMessage(
-    string Role,
-    string Content);
+    [property: JsonPropertyName("role")] string Role,
+    [property: JsonPropertyName("content")] string Content);
 
 public record AiApiCompletionRequest(
-    string Model,
-    List<AiChatMessage> Messages,
-    double Temperature = 0.7,
-    int MaxTokens = 500);
+    [property: JsonPropertyName("model")] string Model,
+    [property: JsonPropertyName("messages")] List<AiChatMessage> Messages,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonPropertyName("temperature")] double? Temperature = 0.7,
+    [property: JsonPropertyName("max_completion_tokens")] int MaxCompletionTokens = 2000);
 
 public record AiApiCompletionChoice(
-    int Index,
-    AiChatMessage Message,
-    string? FinishReason);
+    [property: JsonPropertyName("index")] int Index,
+    [property: JsonPropertyName("message")] AiChatMessage Message,
+    [property: JsonPropertyName("finish_reason")] string? FinishReason);
 
 public record AiApiCompletionResponse(
-    string Id,
-    string Model,
-    List<AiApiCompletionChoice> Choices);
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("model")] string Model,
+    [property: JsonPropertyName("choices")] List<AiApiCompletionChoice> Choices);

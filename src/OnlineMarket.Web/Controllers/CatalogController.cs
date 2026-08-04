@@ -11,24 +11,34 @@ public class CatalogController : Controller
     private readonly ICatalogService _catalogService;
     private readonly IRecommendationClient _recommendationClient;
     private readonly IAuthService _authService;
+    private readonly ILogger<CatalogController> _logger;
 
     public CatalogController(
         ICatalogService catalogService,
         IRecommendationClient recommendationClient,
-        IAuthService authService)
+        IAuthService authService,
+        ILogger<CatalogController> logger)
     {
         _catalogService = catalogService;
         _recommendationClient = recommendationClient;
         _authService = authService;
+        _logger = logger;
     }
 
     private async Task<Guid?> GetCurrentCustomerIdAsync()
     {
-        var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (Guid.TryParse(userIdStr, out var userId))
+        try
         {
-            var customer = await _authService.GetCustomerByUserIdAsync(userId);
-            return customer?.Id;
+            var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (Guid.TryParse(userIdStr, out var userId))
+            {
+                var customer = await _authService.GetCustomerByUserIdAsync(userId);
+                return customer?.Id;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to resolve current customer ID.");
         }
         return null;
     }
@@ -43,70 +53,86 @@ public class CatalogController : Controller
         bool inStockOnly = false,
         string sortBy = "newest")
     {
-        // 1. Trigger HTTP recommendation tasks (HttpClient is safe for async parallelism)
-        var popularRecsTask = _recommendationClient.GetPopularRecommendationsAsync(4);
-
-        var customerId = await GetCurrentCustomerIdAsync();
-        var personalizedRecsTask = customerId.HasValue
-            ? _recommendationClient.GetPersonalizedRecommendationsAsync(customerId.Value, 4)
-            : Task.FromResult(new List<RecommendationItemDto>());
-
-        // 2. Execute DB queries sequentially (EF Core DbContext is single-threaded per request)
-        var filter = new ProductFilterDto(categoryId, brandId, searchQuery, minPrice, maxPrice, inStockOnly, sortBy);
-        var products = await _catalogService.GetProductsAsync(filter);
-        var categories = await _catalogService.GetCategoriesAsync();
-        var brands = await _catalogService.GetBrandsAsync();
-
-        // 3. Await HTTP tasks
-        var rawPopular = await popularRecsTask;
-        var rawPersonalized = await personalizedRecsTask;
-
-        // 4. Enrich recommendations sequentially against DB
-        var popularRecs = await EnrichAndValidateRecommendationsAsync(rawPopular);
-        var personalizedRecs = await EnrichAndValidateRecommendationsAsync(rawPersonalized);
-
-        var viewModel = new CatalogIndexViewModel
+        try
         {
-            Products = products,
-            Categories = categories,
-            Brands = brands,
-            PopularRecommendations = popularRecs,
-            PersonalizedRecommendations = personalizedRecs,
-            SelectedCategoryId = categoryId,
-            SelectedBrandId = brandId,
-            SearchQuery = searchQuery,
-            MinPrice = minPrice,
-            MaxPrice = maxPrice,
-            InStockOnly = inStockOnly,
-            SortBy = sortBy
-        };
+            // 1. Trigger HTTP recommendation tasks
+            var popularRecsTask = _recommendationClient.GetPopularRecommendationsAsync(4);
 
-        return View(viewModel);
+            var customerId = await GetCurrentCustomerIdAsync();
+            var personalizedRecsTask = customerId.HasValue
+                ? _recommendationClient.GetPersonalizedRecommendationsAsync(customerId.Value, 4)
+                : Task.FromResult(new List<RecommendationItemDto>());
+
+            // 2. Execute DB queries sequentially
+            var filter = new ProductFilterDto(categoryId, brandId, searchQuery, minPrice, maxPrice, inStockOnly, sortBy);
+            var products = await _catalogService.GetProductsAsync(filter);
+            var categories = await _catalogService.GetCategoriesAsync();
+            var brands = await _catalogService.GetBrandsAsync();
+
+            // 3. Await HTTP tasks
+            var rawPopular = await popularRecsTask;
+            var rawPersonalized = await personalizedRecsTask;
+
+            // 4. Enrich recommendations sequentially against DB
+            var popularRecs = await EnrichAndValidateRecommendationsAsync(rawPopular);
+            var personalizedRecs = await EnrichAndValidateRecommendationsAsync(rawPersonalized);
+
+            var viewModel = new CatalogIndexViewModel
+            {
+                Products = products,
+                Categories = categories,
+                Brands = brands,
+                PopularRecommendations = popularRecs,
+                PersonalizedRecommendations = personalizedRecs,
+                SelectedCategoryId = categoryId,
+                SelectedBrandId = brandId,
+                SearchQuery = searchQuery,
+                MinPrice = minPrice,
+                MaxPrice = maxPrice,
+                InStockOnly = inStockOnly,
+                SortBy = sortBy
+            };
+
+            return View(viewModel);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred in CatalogController.Index.");
+            return View(new CatalogIndexViewModel());
+        }
     }
 
     [HttpGet]
     public async Task<IActionResult> Details(Guid id)
     {
-        var product = await _catalogService.GetProductByIdAsync(id);
-        if (product == null) return NotFound();
-
-        var rawFbtTask = _recommendationClient.GetFrequentlyBoughtTogetherAsync(id, 4);
-        var rawSimilarTask = _recommendationClient.GetSimilarProductsAsync(id, 4);
-
-        var rawFbt = await rawFbtTask;
-        var rawSimilar = await rawSimilarTask;
-
-        var fbtRecs = await EnrichAndValidateRecommendationsAsync(rawFbt);
-        var similarRecs = await EnrichAndValidateRecommendationsAsync(rawSimilar);
-
-        var viewModel = new ProductDetailViewModel
+        try
         {
-            Product = product,
-            FrequentlyBoughtTogether = fbtRecs,
-            SimilarProducts = similarRecs
-        };
+            var product = await _catalogService.GetProductByIdAsync(id);
+            if (product == null) return NotFound();
 
-        return View(viewModel);
+            var rawFbtTask = _recommendationClient.GetFrequentlyBoughtTogetherAsync(id, 4);
+            var rawSimilarTask = _recommendationClient.GetSimilarProductsAsync(id, 4);
+
+            var rawFbt = await rawFbtTask;
+            var rawSimilar = await rawSimilarTask;
+
+            var fbtRecs = await EnrichAndValidateRecommendationsAsync(rawFbt);
+            var similarRecs = await EnrichAndValidateRecommendationsAsync(rawSimilar);
+
+            var viewModel = new ProductDetailViewModel
+            {
+                Product = product,
+                FrequentlyBoughtTogether = fbtRecs,
+                SimilarProducts = similarRecs
+            };
+
+            return View(viewModel);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error occurred in CatalogController.Details for ProductId {Id}.", id);
+            return NotFound();
+        }
     }
 
     private async Task<List<RecommendationItemDto>> EnrichAndValidateRecommendationsAsync(List<RecommendationItemDto> recs)

@@ -102,53 +102,69 @@
         </div>
 
         <!-- Secondary Categories Sub-Navbar -->
-        <nav class="category-subnav mt-2 pt-2 border-top">
-            <div class="container d-flex align-items-center gap-3 overflow-x-auto py-1 scrollbar-hidden">
-                <a asp-controller="Home" asp-action="Index" class="nav-sublink active"><i class="bi bi-house-door-fill me-1"></i> Ana Sayfa</a>
-                <a asp-controller="Catalog" asp-action="Index" class="nav-sublink"><i class="bi bi-grid-fill me-1"></i> Tüm Ürünler</a>
+        <nav class="category-subnav mt-2 pt-2 border-top position-relative">
+            <div class="container d-flex align-items-center position-relative">
+                <button type="button" class="subnav-scroll-btn left d-none d-md-flex" onclick="scrollCategorySubnav(-220)" aria-label="Sola Kaydır">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <div id="categorySubnavContainer" class="d-flex align-items-center gap-3 overflow-x-auto py-1 scrollbar-hidden category-subnav-container w-100 px-md-4">
+                    <a asp-controller="Home" asp-action="Index" class="nav-sublink active"><i class="bi bi-house-door-fill me-1"></i> Ana Sayfa</a>
+                    <a asp-controller="Catalog" asp-action="Index" class="nav-sublink"><i class="bi bi-grid-fill me-1"></i> Tüm Ürünler</a>
 
-                @foreach (var pCat in navParentCategories)
-                {
-                    <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@pCat.Id" class="nav-sublink">
-                        @if (pCat.Name.Contains("Gıda"))
-                        {
-                            <i class="bi bi-basket2-fill me-1 text-success"></i>
-                        }
-                        else if (pCat.Name.Contains("İçecek"))
-                        {
-                            <i class="bi bi-cup-straw me-1 text-primary"></i>
-                        }
-                        else if (pCat.Name.Contains("Atıştırmalık"))
-                        {
-                            <i class="bi bi-cookie me-1 text-warning"></i>
-                        }
-                        else if (pCat.Name.Contains("Temizlik"))
-                        {
-                            <i class="bi bi-stars me-1 text-info"></i>
-                        }
-                        else if (pCat.Name.Contains("Bebek"))
-                        {
-                            <i class="bi bi-emoji-smile-fill me-1 text-danger"></i>
-                        }
-                        else if (pCat.Name.Contains("Fırın"))
-                        {
-                            <i class="bi bi-cake2-fill me-1 text-warning"></i>
-                        }
-                        else if (pCat.Name.Contains("Şarküteri"))
-                        {
-                            <i class="bi bi-egg-fried me-1 text-danger"></i>
-                        }
-                        else
-                        {
-                            <i class="bi bi-tag-fill me-1 text-secondary"></i>
-                        }
-                        @pCat.Name
-                    </a>
-                }
+                    @foreach (var pCat in navParentCategories)
+                    {
+                        <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@pCat.Id" class="nav-sublink">
+                            @if (pCat.Name.Contains("Gıda"))
+                            {
+                                <i class="bi bi-basket2-fill me-1 text-success"></i>
+                            }
+                            else if (pCat.Name.Contains("İçecek"))
+                            {
+                                <i class="bi bi-cup-straw me-1 text-primary"></i>
+                            }
+                            else if (pCat.Name.Contains("Atıştırmalık"))
+                            {
+                                <i class="bi bi-cookie me-1 text-warning"></i>
+                            }
+                            else if (pCat.Name.Contains("Temizlik"))
+                            {
+                                <i class="bi bi-stars me-1 text-info"></i>
+                            }
+                            else if (pCat.Name.Contains("Bebek"))
+                            {
+                                <i class="bi bi-emoji-smile-fill me-1 text-danger"></i>
+                            }
+                            else if (pCat.Name.Contains("Fırın"))
+                            {
+                                <i class="bi bi-cake2-fill me-1 text-warning"></i>
+                            }
+                            else if (pCat.Name.Contains("Şarküteri"))
+                            {
+                                <i class="bi bi-egg-fried me-1 text-danger"></i>
+                            }
+                            else
+                            {
+                                <i class="bi bi-tag-fill me-1 text-secondary"></i>
+                            }
+                            @pCat.Name
+                        </a>
+                    }
 
-                <a asp-controller="Home" asp-action="Index" asp-fragment="recommendations" class="nav-sublink text-primary font-weight-bold ms-auto"><i class="bi bi-stars me-1"></i> Sana Özel Öneriler</a>
+                    <a asp-controller="Home" asp-action="Index" asp-fragment="recommendations" class="nav-sublink text-primary font-weight-bold ms-auto"><i class="bi bi-stars me-1"></i> Sana Özel Öneriler</a>
+                </div>
+                <button type="button" class="subnav-scroll-btn right d-none d-md-flex" onclick="scrollCategorySubnav(220)" aria-label="Sağa Kaydır">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
             </div>
         </nav>
+        <script>
+            function scrollCategorySubnav(amount) {
+                const container = document.getElementById('categorySubnavContainer');
+                if (container) {
+                    container.scrollBy({ left: amount, behavior: 'smooth' });
+                }
+            }
+        </script>
     </header>
 
     <main class="container animate-fade-in py-4">
@@ -230,9 +246,15 @@
         </div>
     </footer>
 
-    @await Html.PartialAsync("_AiSupportWidget")
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        @await Html.PartialAsync("_AiSupportWidget")
+    }
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="~/js/ai-chat.js"></script>
+    @if (User.Identity?.IsAuthenticated == true)
+    {
+        <script src="~/js/ai-chat.js"></script>
+    }
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
