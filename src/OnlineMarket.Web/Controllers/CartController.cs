@@ -72,16 +72,23 @@ public class CartController : Controller
                 }
             }
 
+            var cartProductIdSet = productIdsInCart.ToHashSet();
+            var products = await _catalogService.GetProductsByIdsAsync(
+                rawCartCompletion.Select(item => item.ProductId));
+            var recommendedProductIds = new HashSet<Guid>();
             var cartCompletionRecs = new List<RecommendationItemDto>();
             foreach (var item in rawCartCompletion)
             {
-                if (!productIdsInCart.Contains(item.ProductId))
+                if (!cartProductIdSet.Contains(item.ProductId)
+                    && recommendedProductIds.Add(item.ProductId)
+                    && products.TryGetValue(item.ProductId, out var product)
+                    && product.IsActive
+                    && product.IsInStock)
                 {
-                    var product = await _catalogService.GetProductByIdAsync(item.ProductId);
-                    if (product != null && product.IsActive && product.IsInStock)
+                    cartCompletionRecs.Add(item with
                     {
-                        cartCompletionRecs.Add(item with { ProductDetails = product });
-                    }
+                        ProductDetails = product
+                    });
                 }
             }
 

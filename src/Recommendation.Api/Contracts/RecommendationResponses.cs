@@ -28,6 +28,19 @@ public sealed record AssociationMetricsResponse(
     decimal Confidence,
     decimal Lift);
 
+public sealed record CartCompletionRecommendationResponse(
+    Guid ProductId,
+    decimal Score,
+    string RecommendationType,
+    string ReasonCode,
+    string ReasonText,
+    CartCompletionMetricsResponse? Metrics);
+
+public sealed record CartCompletionMetricsResponse(
+    int SupportingCartProductCount,
+    decimal Confidence,
+    decimal Lift);
+
 public sealed record RecommendationRecalculationResponse(
     Guid RunId,
     string Status,
