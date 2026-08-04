@@ -6,11 +6,13 @@ public sealed class RecommendationApiKeyHandler(
     IOptions<RecommendationOutboxOptions> options)
     : DelegatingHandler
 {
-    private static readonly HashSet<string> AuthenticatedPaths =
-    [
+    private const string RecommendationQueryPathPrefix = "/api/v1/recommendations/";
+    private static readonly HashSet<string> AuthenticatedEventPaths = new(
+        StringComparer.OrdinalIgnoreCase)
+    {
         "/api/v1/events/products",
         "/api/v1/events/orders"
-    ];
+    };
 
     protected override Task<HttpResponseMessage> SendAsync(
         HttpRequestMessage request,
@@ -26,7 +28,7 @@ public sealed class RecommendationApiKeyHandler(
         {
             throw new InvalidOperationException(
                 $"Configuration value '{RecommendationOutboxOptions.SectionName}:ApiKey' " +
-                "is required when Recommendation Outbox delivery is enabled.");
+                "is required when Recommendation service requests are enabled.");
         }
 
         request.Headers.Remove(RecommendationOutboxOptions.ApiKeyHeaderName);
@@ -47,6 +49,9 @@ public sealed class RecommendationApiKeyHandler(
         var path = requestUri.IsAbsoluteUri
             ? requestUri.AbsolutePath
             : requestUri.OriginalString.Split('?', 2)[0];
-        return AuthenticatedPaths.Contains(path);
+        return AuthenticatedEventPaths.Contains(path)
+            || path.StartsWith(
+                RecommendationQueryPathPrefix,
+                StringComparison.OrdinalIgnoreCase);
     }
 }
