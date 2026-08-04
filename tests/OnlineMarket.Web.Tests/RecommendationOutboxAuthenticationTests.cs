@@ -34,6 +34,7 @@ public sealed class RecommendationOutboxAuthenticationTests(
 
         Assert.Empty(recommendations);
         Assert.Equal("/api/v1/recommendations/popular", recorder.RequestPath);
+        Assert.Equal("?limit=5", recorder.RequestQuery);
         Assert.Equal(ApiKey, recorder.ApiKey);
         Assert.DoesNotContain(
             logs.Entries,
@@ -243,6 +244,8 @@ public sealed class RecommendationOutboxAuthenticationTests(
     {
         public string? RequestPath { get; private set; }
 
+        public string? RequestQuery { get; private set; }
+
         public string? ApiKey { get; private set; }
 
         public string RequestPayload { get; private set; } = string.Empty;
@@ -252,6 +255,7 @@ public sealed class RecommendationOutboxAuthenticationTests(
             CancellationToken cancellationToken)
         {
             RequestPath = request.RequestUri?.AbsolutePath;
+            RequestQuery = request.RequestUri?.Query;
             ApiKey = request.Headers.TryGetValues(
                 RecommendationOutboxOptions.ApiKeyHeaderName,
                 out var values)

@@ -40,7 +40,7 @@ public class RecommendationApiClient : IRecommendationClient
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            var response = await _httpClient.GetFromJsonAsync<List<RecommendationItemDto>>($"/api/v1/recommendations/popular?count={count}", cts.Token);
+            var response = await _httpClient.GetFromJsonAsync<List<RecommendationItemDto>>($"/api/v1/recommendations/popular?limit={count}", cts.Token);
             return response ?? new List<RecommendationItemDto>();
         }
         catch (Exception ex)

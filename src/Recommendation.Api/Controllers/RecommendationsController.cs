@@ -21,11 +21,11 @@ public sealed class RecommendationsController(
         StatusCodes.Status200OK)]
     public async Task<ActionResult<IReadOnlyList<RecommendationResponse>>>
         GetPopular(
-            [FromQuery, Range(1, int.MaxValue)] int? count,
+            [FromQuery(Name = "limit"), Range(1, int.MaxValue)] int? limit,
             CancellationToken cancellationToken)
     {
         var items = await popularityService.GetPopularAsync(
-            count,
+            limit,
             cancellationToken);
         return Ok(items.Select(MapRecommendation).ToArray());
     }
