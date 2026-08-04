@@ -96,11 +96,22 @@ builder.Services.AddHttpClient<IErpIntegrationClient, ErpIntegrationApiClient>(c
 });
 
 // Outbox Named HTTP Clients
+builder.Services
+    .AddOptions<RecommendationOutboxOptions>()
+    .Bind(builder.Configuration.GetSection(
+        RecommendationOutboxOptions.SectionName))
+    .Validate(
+        options => !string.IsNullOrWhiteSpace(options.ApiKey),
+        $"Configuration value '{RecommendationOutboxOptions.SectionName}:ApiKey' " +
+        "is required when Recommendation Outbox delivery is enabled.")
+    .ValidateOnStart();
+builder.Services.AddTransient<RecommendationApiKeyHandler>();
 builder.Services.AddHttpClient("RecommendationApi", client =>
 {
     client.BaseAddress = new Uri(recommendationApiUrl);
     client.Timeout = TimeSpan.FromSeconds(5);
-});
+})
+    .AddHttpMessageHandler<RecommendationApiKeyHandler>();
 
 builder.Services.AddHttpClient("ErpIntegrationApi", client =>
 {
