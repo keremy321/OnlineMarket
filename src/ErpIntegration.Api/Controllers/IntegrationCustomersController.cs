@@ -4,12 +4,25 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ErpIntegration.Api.Controllers;
 
+/// <summary>
+/// Read-only lookups of a customer's integration batches (orders relayed
+/// toward the ERP system).
+/// </summary>
 [ApiController]
 [Route("api/v1/integration/customers")]
 public sealed class IntegrationCustomersController(
     IIntegrationOrderService orderService)
     : ControllerBase
 {
+    /// <summary>
+    /// Returns a page of integration batch summaries for the given customer,
+    /// most recent first.
+    /// </summary>
+    /// <param name="customerId">The OnlineMarket customer ID.</param>
+    /// <param name="page">1-based page number.</param>
+    /// <param name="pageSize">Items per page (1-100).</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Integration Batches")]
     [HttpGet("{customerId:guid}/orders")]
     [ProducesResponseType<PagedResponse<IntegrationJobSummaryResponse>>(
         StatusCodes.Status200OK)]

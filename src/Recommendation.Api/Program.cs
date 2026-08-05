@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 using Recommendation.Api.Application.Interfaces;
 using Recommendation.Api.Application.Options;
 using Recommendation.Api.Application.Services;
@@ -10,6 +11,7 @@ using Recommendation.Api.Contracts;
 using Recommendation.Api.Infrastructure.Http;
 using Recommendation.Api.Infrastructure.Persistence;
 using Recommendation.Api.Infrastructure.Security;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -195,13 +197,63 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
                 errors));
     };
 });
-builder.Services.AddOpenApi();
+const string ApiKeySecuritySchemeId = "ApiKey";
+
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info.Title = "Online Market Recommendation API";
+        document.Info.Description =
+            "Ingests product and order events from the OnlineMarket.Web outbox "
+            + "and serves popularity, frequently-bought-together, cart-completion, "
+            + "similar-product and personalized recommendations, plus model "
+            + "training/evaluation and recommendation-subject operations.";
+
+        var components = document.Components ??= new OpenApiComponents();
+        components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        components.SecuritySchemes[ApiKeySecuritySchemeId] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.ApiKey,
+            Name = ApiKeyDefaults.HeaderName,
+            In = ParameterLocation.Header,
+            Description =
+                "API key required in the X-Api-Key header for protected endpoints."
+        };
+
+        return Task.CompletedTask;
+    });
+
+    options.AddOperationTransformer((operation, context, cancellationToken) =>
+    {
+        var endpointMetadata =
+            context.Description.ActionDescriptor.EndpointMetadata;
+        var requiresApiKey = endpointMetadata.OfType<IAuthorizeData>().Any();
+        var allowsAnonymous = endpointMetadata.OfType<IAllowAnonymous>().Any();
+
+        if (requiresApiKey && !allowsAnonymous)
+        {
+            operation.Security ??= [];
+            operation.Security.Add(new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference(
+                    ApiKeySecuritySchemeId,
+                    context.Document)] = []
+            });
+        }
+
+        return Task.CompletedTask;
+    });
+});
 
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.MapOpenApi();
+    app.MapOpenApi().AllowAnonymous();
+    app.MapScalarApiReference(options =>
+        options.WithTitle("Online Market Recommendation API"))
+        .AllowAnonymous();
 }
 
 app.UseExceptionHandler();

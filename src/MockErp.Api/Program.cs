@@ -1,15 +1,18 @@
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 using MockErp.Api.Application.Interfaces;
 using MockErp.Api.Application.Services;
 using MockErp.Api.Contracts;
 using MockErp.Api.Infrastructure.Http;
 using MockErp.Api.Infrastructure.Persistence;
 using MockErp.Api.Infrastructure.Security;
+using Scalar.AspNetCore;
 
 var demoStockWorkbookPath = GetDemoStockWorkbookPath(args);
 var builder = WebApplication.CreateBuilder(args);
@@ -91,7 +94,54 @@ builder.Services.AddRateLimiter(options =>
             cancellationToken);
     };
 });
-builder.Services.AddOpenApi();
+const string ApiKeySecuritySchemeId = "ApiKey";
+
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info.Title = "Online Market Mock ERP API";
+        document.Info.Description =
+            "Simulates the external ERP system that OnlineMarket.Web and "
+            + "ErpIntegration.Api integrate with: customer upserts, order intake, "
+            + "stock movements and accounting entries, all idempotent via the "
+            + "Idempotency-Key request header.";
+
+        var components = document.Components ??= new OpenApiComponents();
+        components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        components.SecuritySchemes[ApiKeySecuritySchemeId] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.ApiKey,
+            Name = ApiKeyDefaults.HeaderName,
+            In = ParameterLocation.Header,
+            Description =
+                "API key required in the X-Api-Key header for protected endpoints."
+        };
+
+        return Task.CompletedTask;
+    });
+
+    options.AddOperationTransformer((operation, context, cancellationToken) =>
+    {
+        var endpointMetadata =
+            context.Description.ActionDescriptor.EndpointMetadata;
+        var requiresApiKey = endpointMetadata.OfType<IAuthorizeData>().Any();
+        var allowsAnonymous = endpointMetadata.OfType<IAllowAnonymous>().Any();
+
+        if (requiresApiKey && !allowsAnonymous)
+        {
+            operation.Security ??= [];
+            operation.Security.Add(new OpenApiSecurityRequirement
+            {
+                [new OpenApiSecuritySchemeReference(
+                    ApiKeySecuritySchemeId,
+                    context.Document)] = []
+            });
+        }
+
+        return Task.CompletedTask;
+    });
+});
 
 var app = builder.Build();
 
@@ -118,6 +168,8 @@ if (demoStockWorkbookPath is not null)
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+        options.WithTitle("Online Market Mock ERP API"));
 }
 
 app.UseExceptionHandler();

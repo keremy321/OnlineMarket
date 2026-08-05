@@ -5,12 +5,25 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ErpIntegration.Api.Controllers;
 
+/// <summary>
+/// Read-only lookups across all integration batches (orders relayed toward
+/// the ERP system), independent of customer.
+/// </summary>
 [ApiController]
 [Route("api/v1/integration/jobs")]
 public sealed class IntegrationJobsController(
     IIntegrationOrderService orderService)
     : ControllerBase
 {
+    /// <summary>
+    /// Returns a page of integration batch summaries, optionally filtered by
+    /// status, most recent first.
+    /// </summary>
+    /// <param name="status">Optional batch status filter.</param>
+    /// <param name="page">1-based page number.</param>
+    /// <param name="pageSize">Items per page (1-100).</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Integration Batches")]
     [HttpGet]
     [ProducesResponseType<PagedResponse<IntegrationJobSummaryResponse>>(
         StatusCodes.Status200OK)]
