@@ -6,6 +6,10 @@ namespace OnlineMarket.Web.Infrastructure.Http;
 
 public class RecommendationApiClient : IRecommendationClient
 {
+    private const int SimilarProductLimit = 4;
+    private static readonly TimeSpan RecommendationTimeout =
+        TimeSpan.FromSeconds(4);
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<RecommendationApiClient> _logger;
 
@@ -70,18 +74,68 @@ public class RecommendationApiClient : IRecommendationClient
 
     public async Task<List<RecommendationItemDto>> GetSimilarProductsAsync(Guid productId, int count = 5)
     {
-        if (IsCircuitOpen()) return new List<RecommendationItemDto>();
+        if (productId == Guid.Empty || count <= 0)
+        {
+            return [];
+        }
+
+        var limit = Math.Min(count, SimilarProductLimit);
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            var response = await _httpClient.GetFromJsonAsync<List<RecommendationItemDto>>($"/api/v1/recommendations/products/{productId}/similar?count={count}", cts.Token);
-            return response ?? new List<RecommendationItemDto>();
+            using var cts = new CancellationTokenSource(RecommendationTimeout);
+            using var response = await _httpClient.GetAsync(
+                $"/api/v1/recommendations/similar/{productId:D}?limit={limit}",
+                cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                RecordFailure();
+                _logger.LogWarning(
+                    "Similar recommendations returned HTTP {StatusCode} for ProductId {ProductId} and Limit {Limit}.",
+                    (int)response.StatusCode,
+                    productId,
+                    limit);
+                return [];
+            }
+
+            var recommendations = await response.Content
+                .ReadFromJsonAsync<List<SimilarRecommendationResponseDto>>(
+                    cancellationToken: cts.Token);
+            if (recommendations is null)
+            {
+                return [];
+            }
+
+            if (recommendations.Any(item =>
+                    item.ProductId == Guid.Empty
+                    || string.IsNullOrWhiteSpace(item.RecommendationType)
+                    || string.IsNullOrWhiteSpace(item.ReasonCode)
+                    || string.IsNullOrWhiteSpace(item.ReasonText)))
+            {
+                RecordFailure();
+                _logger.LogWarning(
+                    "Similar recommendations returned an invalid contract for ProductId {ProductId} and Limit {Limit}.",
+                    productId,
+                    limit);
+                return [];
+            }
+
+            return recommendations
+                .Take(limit)
+                .Select(item => new RecommendationItemDto(
+                    item.ProductId,
+                    item.ReasonText,
+                    item.Score))
+                .ToList();
         }
         catch (Exception ex)
         {
             RecordFailure();
-            _logger.LogWarning("Recommendation.Api unavailable ({Message}). Circuit opened for 15s.", ex.Message);
-            return new List<RecommendationItemDto>();
+            _logger.LogWarning(
+                ex,
+                "Similar recommendations were unavailable for ProductId {ProductId} and Limit {Limit}; the section will be hidden.",
+                productId,
+                limit);
+            return [];
         }
     }
 

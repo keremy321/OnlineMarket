@@ -90,7 +90,7 @@ var recommendationApiUrl = builder.Configuration["Services:RecommendationApi"] ?
 builder.Services.AddHttpClient<IRecommendationClient, RecommendationApiClient>(client =>
 {
     client.BaseAddress = new Uri(recommendationApiUrl);
-    client.Timeout = TimeSpan.FromSeconds(3);
+    client.Timeout = TimeSpan.FromSeconds(5);
 })
     .AddHttpMessageHandler<RecommendationApiKeyHandler>();
 
@@ -106,6 +106,8 @@ builder.Services
     .AddOptions<RecommendationOutboxOptions>()
     .Bind(builder.Configuration.GetSection(
         RecommendationOutboxOptions.SectionName))
+    .Configure(options =>
+        options.RecommendationApiBaseAddress = recommendationApiUrl)
     .Validate(
         options => !string.IsNullOrWhiteSpace(options.ApiKey),
         $"Configuration value '{RecommendationOutboxOptions.SectionName}:ApiKey' " +

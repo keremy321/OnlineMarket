@@ -39,9 +39,15 @@ public sealed class RecommendationApiKeyHandler(
         return base.SendAsync(request, cancellationToken);
     }
 
-    private static bool RequiresRecommendationAuthentication(Uri? requestUri)
+    private bool RequiresRecommendationAuthentication(Uri? requestUri)
     {
         if (requestUri is null)
+        {
+            return false;
+        }
+
+        if (requestUri.IsAbsoluteUri
+            && !IsConfiguredRecommendationApi(requestUri))
         {
             return false;
         }
@@ -53,5 +59,26 @@ public sealed class RecommendationApiKeyHandler(
             || path.StartsWith(
                 RecommendationQueryPathPrefix,
                 StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsConfiguredRecommendationApi(Uri requestUri)
+    {
+        if (!Uri.TryCreate(
+                options.Value.RecommendationApiBaseAddress,
+                UriKind.Absolute,
+                out var recommendationApiUri))
+        {
+            return false;
+        }
+
+        return string.Equals(
+                requestUri.Scheme,
+                recommendationApiUri.Scheme,
+                StringComparison.OrdinalIgnoreCase)
+            && string.Equals(
+                requestUri.Host,
+                recommendationApiUri.Host,
+                StringComparison.OrdinalIgnoreCase)
+            && requestUri.Port == recommendationApiUri.Port;
     }
 }

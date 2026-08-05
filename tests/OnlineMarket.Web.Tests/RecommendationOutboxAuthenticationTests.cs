@@ -66,6 +66,58 @@ public sealed class RecommendationOutboxAuthenticationTests(
     }
 
     [Fact]
+    public async Task Similar_query_uses_capped_limit_and_recommendation_api_key()
+    {
+        var productId = Guid.NewGuid();
+        var recommendedProductIds = Enumerable.Range(0, 5)
+            .Select(_ => Guid.NewGuid())
+            .ToArray();
+        var recorder = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(recommendedProductIds.Select(
+                (recommendedProductId, index) =>
+                    new SimilarRecommendationResponseDto(
+                        recommendedProductId,
+                        1m - (index * 0.1m),
+                        "Similar",
+                        "Similar.Content",
+                        "Similar product")))
+        });
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var logs = new CapturingLogger<RecommendationApiClient>();
+        var client = new RecommendationApiClient(httpClient, logs);
+
+        var recommendations = await client.GetSimilarProductsAsync(productId, 99);
+
+        Assert.Equal(recommendedProductIds.Take(4), recommendations.Select(item => item.ProductId));
+        Assert.Equal($"/api/v1/recommendations/similar/{productId}", recorder.RequestPath);
+        Assert.Equal("?limit=4", recorder.RequestQuery);
+        Assert.Equal(ApiKey, recorder.ApiKey);
+        Assert.DoesNotContain(
+            logs.Entries,
+            entry => entry.Contains(ApiKey, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Similar_query_rejects_non_positive_limit(int limit)
+    {
+        var recorder = new RecordingHandler();
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var client = new RecommendationApiClient(
+            httpClient,
+            NullLogger<RecommendationApiClient>.Instance);
+
+        var recommendations = await client.GetSimilarProductsAsync(
+            Guid.NewGuid(),
+            limit);
+
+        Assert.Empty(recommendations);
+        Assert.Null(recorder.RequestPath);
+    }
+
+    [Fact]
     public async Task Cart_completion_client_posts_strict_body_with_api_key()
     {
         var firstProductId = Guid.NewGuid();
@@ -227,6 +279,19 @@ public sealed class RecommendationOutboxAuthenticationTests(
     }
 
     [Fact]
+    public async Task Unrelated_service_does_not_receive_recommendation_api_key()
+    {
+        var recorder = new RecordingHandler();
+        using var client = CreateRecommendationHttpClient(recorder, ApiKey);
+
+        using var response = await client.GetAsync(
+            $"https://unrelated.invalid/api/v1/recommendations/similar/{Guid.NewGuid()}?limit=4");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(recorder.ApiKey);
+    }
+
+    [Fact]
     public async Task Missing_recommendation_key_is_a_clear_configuration_failure()
     {
         var recorder = new RecordingHandler();
@@ -297,7 +362,8 @@ public sealed class RecommendationOutboxAuthenticationTests(
         var authenticationHandler = new RecommendationApiKeyHandler(
             Options.Create(new RecommendationOutboxOptions
             {
-                ApiKey = apiKey
+                ApiKey = apiKey,
+                RecommendationApiBaseAddress = "https://test.invalid"
             }))
         {
             InnerHandler = recorder
@@ -351,7 +417,8 @@ public sealed class RecommendationOutboxAuthenticationTests(
                 pipeline = new RecommendationApiKeyHandler(
                     Options.Create(new RecommendationOutboxOptions
                     {
-                        ApiKey = apiKey
+                        ApiKey = apiKey,
+                        RecommendationApiBaseAddress = "https://test.invalid"
                     }))
                 {
                     InnerHandler = terminalHandler
