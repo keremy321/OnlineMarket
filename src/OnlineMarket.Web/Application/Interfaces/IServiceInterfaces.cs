@@ -122,3 +122,15 @@ public interface IOutboxDispatcher
         ClaimedOutboxMessageDto message,
         CancellationToken cancellationToken = default);
 }
+
+public interface IProductImageService
+{
+    Task<string?> SaveProductImageAsync(
+        Microsoft.AspNetCore.Http.IFormFile imageFile,
+        string productName,
+        string sku,
+        CancellationToken cancellationToken = default);
+
+    Task<int> BulkMatchImagesFromFolderAsync(CancellationToken cancellationToken = default);
+}
+

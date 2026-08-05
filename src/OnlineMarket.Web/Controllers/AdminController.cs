@@ -12,17 +12,20 @@ public class AdminController : Controller
 {
     private readonly ICatalogService _catalogService;
     private readonly IAdminQueryService _adminQueryService;
+    private readonly IProductImageService _productImageService;
     private readonly IOutboxService _outboxService;
     private readonly ILogger<AdminController> _logger;
 
     public AdminController(
         ICatalogService catalogService,
         IAdminQueryService adminQueryService,
+        IProductImageService productImageService,
         IOutboxService outboxService,
         ILogger<AdminController> logger)
     {
         _catalogService = catalogService;
         _adminQueryService = adminQueryService;
+        _productImageService = productImageService;
         _outboxService = outboxService;
         _logger = logger;
     }
@@ -66,6 +69,31 @@ public class AdminController : Controller
         }
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkMatchImages()
+    {
+        try
+        {
+            var count = await _productImageService.BulkMatchImagesFromFolderAsync();
+            if (count > 0)
+            {
+                TempData["SuccessMessage"] = $"{count} adet ürün görseli isimlerine göre otomatik eşleştirildi ve güncellendi.";
+            }
+            else
+            {
+                TempData["InfoMessage"] = "Klasördeki görsellerle eşleşen yeni bir ürün bulunamadı veya tüm görseller zaten eşleştirilmiş.";
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during bulk matching of product images.");
+            TempData["ErrorMessage"] = "Görseller eşleştirilirken bir hata oluştu: " + ex.Message;
+        }
+
+        return RedirectToAction(nameof(Products));
+    }
+
     [HttpGet]
     public async Task<IActionResult> CreateProduct()
     {
@@ -102,6 +130,15 @@ public class AdminController : Controller
 
         try
         {
+            if (model.ImageFile != null)
+            {
+                var uploadedUrl = await _productImageService.SaveProductImageAsync(model.ImageFile, model.Name, model.Sku);
+                if (!string.IsNullOrEmpty(uploadedUrl))
+                {
+                    model.ImageUrl = uploadedUrl;
+                }
+            }
+
             var dto = new ProductDto(
                 Guid.Empty,
                 model.Sku,
@@ -188,6 +225,15 @@ public class AdminController : Controller
 
         try
         {
+            if (model.ImageFile != null)
+            {
+                var uploadedUrl = await _productImageService.SaveProductImageAsync(model.ImageFile, model.Name, model.Sku);
+                if (!string.IsNullOrEmpty(uploadedUrl))
+                {
+                    model.ImageUrl = uploadedUrl;
+                }
+            }
+
             var dto = new ProductDto(
                 id,
                 model.Sku,
@@ -209,13 +255,13 @@ public class AdminController : Controller
             );
 
             await _catalogService.UpdateProductAsync(id, dto);
-            TempData["SuccessMessage"] = "Ürün bilgileri ve snapshot olayları başarıyla güncellendi.";
+            TempData["SuccessMessage"] = "Ürün bilgileri ve görseli başarıyla güncellendi.";
             return RedirectToAction(nameof(Products));
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error updating product {Id}.", id);
-            ModelState.AddModelError(string.Empty, "Ürün güncellenirken bir hata oluştu.");
+            ModelState.AddModelError(string.Empty, "Ürün güncellenirken bir hata oluştu: " + ex.Message);
             model.Categories = await _catalogService.GetCategoriesAsync();
             model.Brands = await _catalogService.GetBrandsAsync();
             return View(model);

@@ -9,7 +9,7 @@
             <h3 class="fw-bold mb-3"><i class="bi bi-pencil-square text-primary me-2"></i>Ürün Bilgilerini Düzenle</h3>
             <p class="text-secondary small mb-4">Ürün güncellendiğinde <code>ProductSnapshotChangedV1</code> outbox mesajı tetiklenir.</p>
 
-            <form asp-action="EditProduct" asp-route-id="@Model.Id" method="post">
+            <form asp-action="EditProduct" asp-route-id="@Model.Id" method="post" enctype="multipart/form-data">
                 @Html.AntiForgeryToken()
                 <input type="hidden" asp-for="Id" />
                 <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
@@ -70,8 +70,23 @@
                     <textarea asp-for="Description" class="form-control rounded-3" rows="3"></textarea>
                 </div>
 
+                @if (!string.IsNullOrEmpty(Model.ImageUrl))
+                {
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold d-block">Mevcut Görsel</label>
+                        <img src="@Model.ImageUrl" class="rounded border p-1" style="max-height: 120px; object-fit: contain;" />
+                    </div>
+                }
+
                 <div class="mb-3">
-                    <label asp-for="ImageUrl" class="form-label fw-semibold">Görsel URL</label>
+                    <label asp-for="ImageFile" class="form-label fw-semibold">Yeni Görsel Dosyası Yükle</label>
+                    <input asp-for="ImageFile" type="file" accept="image/*" class="form-control rounded-3" />
+                    <span asp-validation-for="ImageFile" class="text-danger small"></span>
+                    <div class="form-text small text-secondary">Seçilen yeni dosya sunucuya yüklenecek ve `ImageUrl` alanını güncelleyecektir.</div>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="ImageUrl" class="form-label fw-semibold">Görsel URL / Path</label>
                     <input asp-for="ImageUrl" class="form-control rounded-3" />
                 </div>
 

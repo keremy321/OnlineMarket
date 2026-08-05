@@ -202,7 +202,8 @@ public sealed class CatalogService : ICatalogService
             UpdatedAtUtc = now
         };
 
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        var isRelational = _dbContext.Database.IsRelational();
+        await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
         var parentCategoryId = await GetParentCategoryIdAsync(product.CategoryId);
 
         _dbContext.Products.Add(product);
@@ -230,21 +231,28 @@ public sealed class CatalogService : ICatalogService
             now));
 
         await _dbContext.SaveChangesAsync();
-        await transaction.CommitAsync();
+        if (transaction != null)
+        {
+            await transaction.CommitAsync();
+        }
 
         return (await GetProductByIdAsync(productId))!;
     }
 
     public async Task<ProductDto?> UpdateProductAsync(Guid id, ProductDto dto)
     {
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        var isRelational = _dbContext.Database.IsRelational();
+        await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
         var product = await _dbContext.Products
             .Include(candidate => candidate.Stock)
             .FirstOrDefaultAsync(candidate => candidate.Id == id);
 
         if (product is null)
         {
-            await transaction.RollbackAsync();
+            if (transaction != null)
+            {
+                await transaction.RollbackAsync();
+            }
             return null;
         }
 
@@ -270,7 +278,10 @@ public sealed class CatalogService : ICatalogService
             now));
 
         await _dbContext.SaveChangesAsync();
-        await transaction.CommitAsync();
+        if (transaction != null)
+        {
+            await transaction.CommitAsync();
+        }
 
         return await GetProductByIdAsync(id);
     }
@@ -286,13 +297,17 @@ public sealed class CatalogService : ICatalogService
             return false;
         }
 
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+        var isRelational = _dbContext.Database.IsRelational();
+        await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
         var product = await _dbContext.Products
             .FirstOrDefaultAsync(candidate => candidate.Id == productId);
 
         if (product is null)
         {
-            await transaction.RollbackAsync();
+            if (transaction != null)
+            {
+                await transaction.RollbackAsync();
+            }
             return false;
         }
 
@@ -304,7 +319,10 @@ public sealed class CatalogService : ICatalogService
 
         if (stockResult is null)
         {
-            await transaction.RollbackAsync();
+            if (transaction != null)
+            {
+                await transaction.RollbackAsync();
+            }
             return false;
         }
 
@@ -339,7 +357,10 @@ public sealed class CatalogService : ICatalogService
         }
 
         await _dbContext.SaveChangesAsync();
-        await transaction.CommitAsync();
+        if (transaction != null)
+        {
+            await transaction.CommitAsync();
+        }
 
         return true;
     }

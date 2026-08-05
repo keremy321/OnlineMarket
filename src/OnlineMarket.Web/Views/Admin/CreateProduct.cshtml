@@ -9,7 +9,7 @@
             <h3 class="fw-bold mb-3"><i class="bi bi-plus-circle text-primary me-2"></i>Yeni Ürün Oluştur</h3>
             <p class="text-secondary small mb-4">Ürün oluşturulduğunda otomatik stok hareketi kaydedilir ve Tavsiye servisine Outbox olayı iletilir.</p>
 
-            <form asp-action="CreateProduct" method="post">
+            <form asp-action="CreateProduct" method="post" enctype="multipart/form-data">
                 @Html.AntiForgeryToken()
                 <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
 
@@ -78,8 +78,15 @@
                 </div>
 
                 <div class="mb-3">
-                    <label asp-for="ImageUrl" class="form-label fw-semibold">Görsel URL</label>
-                    <input asp-for="ImageUrl" class="form-control rounded-3" placeholder="https://..." />
+                    <label asp-for="ImageFile" class="form-label fw-semibold">Görsel Dosyası Yükle (Dosya Tabanlı / Path)</label>
+                    <input asp-for="ImageFile" type="file" accept="image/*" class="form-control rounded-3" />
+                    <span asp-validation-for="ImageFile" class="text-danger small"></span>
+                    <div class="form-text small text-secondary">Desteklenen formatlar: .jpg, .jpeg, .png, .webp, .gif. Yüklenen dosya sunucudaki wwwroot/uploads/products/ dizinine kaydedilecektir.</div>
+                </div>
+
+                <div class="mb-3">
+                    <label asp-for="ImageUrl" class="form-label fw-semibold">Veya Harici Görsel URL / Path</label>
+                    <input asp-for="ImageUrl" class="form-control rounded-3" placeholder="/uploads/products/... veya https://..." />
                 </div>
 
                 <div class="form-check mb-4">
