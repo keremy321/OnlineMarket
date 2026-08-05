@@ -94,7 +94,9 @@ public class CheckoutController : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
-    public async Task<IActionResult> ProcessCheckout(CheckoutIndexViewModel model)
+    public async Task<IActionResult> ProcessCheckout(
+        CheckoutIndexViewModel model,
+        CancellationToken cancellationToken)
     {
         var customerId = await GetCurrentCustomerIdAsync();
         if (!customerId.HasValue) return RedirectToAction("Login", "Account");
@@ -108,7 +110,10 @@ public class CheckoutController : Controller
                 model.SimulateSuccess
             );
 
-            var result = await _checkoutService.ExecuteCheckoutAsync(customerId.Value, request);
+            var result = await _checkoutService.ExecuteCheckoutAsync(
+                customerId.Value,
+                request,
+                cancellationToken);
             if (result.Success && result.OrderId.HasValue)
             {
                 return RedirectToAction(nameof(Success), new { id = result.OrderId.Value });

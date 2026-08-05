@@ -100,6 +100,107 @@ public sealed class CheckoutServiceTests
     }
 
     [Fact]
+    public async Task SuccessfulCheckoutWithRetryOnFailureEnabledCommitsFullAggregate()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        CheckoutScenario scenario;
+        await using (var arrangeContext = database.CreateContext())
+        {
+            scenario = await OnlineMarketTestData.SeedCheckoutScenarioAsync(
+                arrangeContext,
+                stockQuantity: 10,
+                cartQuantity: 2);
+        }
+
+        await using var context = database.CreateContext(enableRetryOnFailure: true);
+        var service = OnlineMarketTestData.CreateCheckoutService(context);
+
+        var result = await service.ExecuteCheckoutAsync(
+            scenario.CustomerId,
+            new CheckoutRequestDto(
+                scenario.AddressId,
+                "Ignored holder",
+                "**** 1234",
+                true));
+
+        Assert.True(result.Success);
+        Assert.NotNull(result.OrderId);
+        Assert.Matches("^ORD-[0-9]{20}$", result.OrderNumber);
+
+        await using var verification = database.CreateContext();
+        var order = await verification.Orders
+            .Include(candidate => candidate.Items)
+            .Include(candidate => candidate.Payment)
+            .SingleAsync(candidate => candidate.Id == result.OrderId);
+        Assert.Single(order.Items);
+        Assert.NotNull(order.Payment);
+        Assert.Equal(8, await verification.Stocks
+            .Where(stock => stock.ProductId == scenario.ProductId)
+            .Select(stock => stock.Quantity)
+            .SingleAsync());
+        Assert.Equal(1, await verification.StockMovements.CountAsync());
+        Assert.Equal(
+            CartStatus.Converted,
+            await verification.Carts
+                .Where(cart => cart.Id == scenario.CartId)
+                .Select(cart => cart.Status)
+                .SingleAsync());
+
+        var messages = await verification.OutboxMessages
+            .Where(message => message.AggregateId == order.Id)
+            .ToListAsync();
+        Assert.Equal(2, messages.Count);
+        Assert.Contains(messages, message => message.EventType == nameof(OrderConfirmedForRecommendationV1));
+        Assert.Contains(messages, message => message.EventType == nameof(OrderReadyForErpV1));
+    }
+
+    [Fact]
+    public async Task CancellationDuringCheckoutPropagatesAndRollsBackEveryWrite()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        CheckoutScenario scenario;
+        await using (var context = database.CreateContext())
+        {
+            scenario = await OnlineMarketTestData.SeedCheckoutScenarioAsync(
+                context,
+                stockQuantity: 10,
+                cartQuantity: 1);
+
+            using var cancellationTokenSource = new CancellationTokenSource();
+            var stockService = new CancelingStockMutationService(
+                new SqlServerStockMutationService(context),
+                cancellationTokenSource);
+            var service = new CheckoutService(
+                context,
+                stockService,
+                new SqlServerOrderNumberGenerator(context),
+                NullLogger<CheckoutService>.Instance);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                service.ExecuteCheckoutAsync(
+                    scenario.CustomerId,
+                    new CheckoutRequestDto(scenario.AddressId, "", "", true),
+                    cancellationTokenSource.Token));
+        }
+
+        await using var verification = database.CreateContext();
+        Assert.Equal(0, await verification.Orders.CountAsync());
+        Assert.Equal(0, await verification.Payments.CountAsync());
+        Assert.Equal(0, await verification.StockMovements.CountAsync());
+        Assert.Equal(0, await verification.OutboxMessages.CountAsync());
+        Assert.Equal(10, await verification.Stocks
+            .Where(stock => stock.ProductId == scenario.ProductId)
+            .Select(stock => stock.Quantity)
+            .SingleAsync());
+        Assert.Equal(
+            CartStatus.Active,
+            await verification.Carts
+                .Where(cart => cart.Id == scenario.CartId)
+                .Select(cart => cart.Status)
+                .SingleAsync());
+    }
+
+    [Fact]
     public async Task FailureAfterFirstStockMutationRollsBackEveryCheckoutWrite()
     {
         await using var database = await fixture.CreateDatabaseAsync();
@@ -477,6 +578,48 @@ public sealed class CheckoutServiceTests
         Assert.All(
             forbiddenTerms,
             term => Assert.DoesNotContain(term, payload, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class CancelingStockMutationService : IStockMutationService
+    {
+        private readonly IStockMutationService inner;
+        private readonly CancellationTokenSource cancellationTokenSource;
+
+        public CancelingStockMutationService(
+            IStockMutationService inner,
+            CancellationTokenSource cancellationTokenSource)
+        {
+            this.inner = inner;
+            this.cancellationTokenSource = cancellationTokenSource;
+        }
+
+        public Task<StockMutationResultDto?> TryDecreaseAsync(
+            Guid productId,
+            int requestedQuantity,
+            DateTime updatedAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationTokenSource.Cancel();
+            cancellationToken.ThrowIfCancellationRequested();
+            return inner.TryDecreaseAsync(
+                productId,
+                requestedQuantity,
+                updatedAtUtc,
+                cancellationToken);
+        }
+
+        public Task<StockMutationResultDto?> TryAdjustAsync(
+            Guid productId,
+            int quantityChange,
+            DateTime updatedAtUtc,
+            CancellationToken cancellationToken = default)
+        {
+            return inner.TryAdjustAsync(
+                productId,
+                quantityChange,
+                updatedAtUtc,
+                cancellationToken);
+        }
     }
 
     private sealed class FailAfterFirstMutationService : IStockMutationService

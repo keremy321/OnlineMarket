@@ -51,7 +51,10 @@ public interface ICartService
 
 public interface ICheckoutService
 {
-    Task<CheckoutResultDto> ExecuteCheckoutAsync(Guid customerId, CheckoutRequestDto request);
+    Task<CheckoutResultDto> ExecuteCheckoutAsync(
+        Guid customerId,
+        CheckoutRequestDto request,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IOrderService
