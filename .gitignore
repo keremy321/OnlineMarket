@@ -348,6 +348,9 @@ __pycache__/
 src/Recommendation.ModelService/artifacts/*
 !src/Recommendation.ModelService/artifacts/.gitkeep
 
+# Generated recommendation evaluation reports
+src/Recommendation.ModelService/evaluation-reports/
+
 # Cake - Uncomment if you are using it
 # tools/**
 # !tools/packages.config

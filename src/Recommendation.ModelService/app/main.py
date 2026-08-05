@@ -14,6 +14,8 @@ from .config import Settings
 from .contracts import (
     ApiErrorResponse,
     ArtifactMetadata,
+    ModelEvaluationRequest,
+    ModelEvaluationResponse,
     ModelTrainingRequest,
     ModelTrainingResponse,
     PersonalizedRecommendationsRequest,
@@ -22,6 +24,7 @@ from .contracts import (
     SimilarProductsResponse,
 )
 from .service import (
+    EvaluationAlreadyInProgressError,
     ModelUnavailableError,
     RecommendationModelService,
     TrainingAlreadyInProgressError,
@@ -36,6 +39,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     model_service = RecommendationModelService(
         ArtifactStore(resolved_settings.artifact_directory),
         resolved_settings.als,
+        resolved_settings.evaluation,
     )
 
     @asynccontextmanager
@@ -113,6 +117,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             False,
         )
 
+    @application.exception_handler(EvaluationAlreadyInProgressError)
+    async def evaluation_in_progress_handler(
+        _: Request,
+        __: EvaluationAlreadyInProgressError,
+    ) -> JSONResponse:
+        return error_response(
+            status.HTTP_409_CONFLICT,
+            "RecommendationModel.EvaluationAlreadyInProgress",
+            "Model evaluation is already in progress.",
+            False,
+        )
+
     @application.get("/health", include_in_schema=False)
     async def health() -> dict[str, str]:
         return {"status": "healthy"}
@@ -137,6 +153,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             metadata.correlationId,
         )
         return ModelTrainingResponse(status="Succeeded", metadata=metadata)
+
+    @application.post(
+        "/api/v1/models/evaluate",
+        response_model=ModelEvaluationResponse,
+        dependencies=[Depends(require_api_key)],
+    )
+    async def evaluate(request: ModelEvaluationRequest) -> ModelEvaluationResponse:
+        response = await run_in_threadpool(model_service.evaluate, request)
+        LOGGER.info(
+            "Model evaluation completed; evaluation_version=%s product_count=%s "
+            "subject_count=%s order_count=%s interaction_count=%s "
+            "eligible_subject_count=%s popularity_status=%s als_status=%s "
+            "report_identifier=%s.",
+            response.evaluationVersion,
+            response.dataset.productCount,
+            response.dataset.subjectCount,
+            response.dataset.orderCount,
+            response.dataset.interactionCount,
+            response.split.eligibleSubjectCount,
+            response.models.popularity.status,
+            response.models.als.status,
+            response.reportIdentifier,
+        )
+        return response
 
     @application.post(
         "/api/v1/models/similar",

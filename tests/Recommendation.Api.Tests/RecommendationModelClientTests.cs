@@ -232,6 +232,110 @@ public sealed class RecommendationModelClientTests
             result.Outcome);
     }
 
+    [Fact]
+    public async Task Evaluation_uses_correct_route_key_and_purpose_limited_payload()
+    {
+        string? path = null;
+        string? key = null;
+        string? body = null;
+        var request = RecommendationModelEvaluationTestData.Request();
+        var client = CreateClient(new DelegateHandler(message =>
+        {
+            path = message.RequestUri!.AbsolutePath;
+            key = message.Headers.GetValues(ApiKeyDefaults.HeaderName).Single();
+            body = message.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return JsonResponse(CreateEvaluationJson(request.EvaluationVersion));
+        }));
+
+        var result = await client.EvaluateAsync(request);
+
+        Assert.Equal(RecommendationModelClientOutcome.Succeeded, result.Outcome);
+        Assert.Equal("/api/v1/models/evaluate", path);
+        Assert.Equal(ModelApiKey, key);
+        Assert.Contains(
+            $"\"subjectId\":\"{RecommendationModelEvaluationTestData.SubjectId}\"",
+            body,
+            StringComparison.Ordinal);
+        Assert.Contains("\"occurredAtUtc\":", body, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "customerId",
+            body,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Theory]
+    [InlineData("{not-json")]
+    [InlineData("{\"status\":\"Succeeded\",\"unexpected\":true}")]
+    public async Task Malformed_evaluation_response_is_rejected(string json)
+    {
+        var client = CreateClient(new DelegateHandler(_ => JsonResponse(json)));
+
+        var result = await client.EvaluateAsync(
+            RecommendationModelEvaluationTestData.Request());
+
+        Assert.Equal(
+            RecommendationModelClientOutcome.InvalidResponse,
+            result.Outcome);
+    }
+
+    [Fact]
+    public async Task Evaluation_uses_a_longer_timeout_than_inference()
+    {
+        var handler = new AsyncDelegateHandler(async (request, cancellationToken) =>
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(300), cancellationToken);
+            return request.RequestUri!.AbsolutePath.EndsWith(
+                "/evaluate",
+                StringComparison.Ordinal)
+                    ? JsonResponse(CreateEvaluationJson("temporal-test-v1"))
+                    : JsonResponse(CreateSimilarJson());
+        });
+        var client = CreateClient(
+            handler,
+            timeout: TimeSpan.FromMilliseconds(100),
+            evaluationTimeout: TimeSpan.FromSeconds(1));
+
+        var evaluation = await client.EvaluateAsync(
+            RecommendationModelEvaluationTestData.Request());
+        var inference = await client.GetSimilarAsync(
+            new RecommendationModelSimilarRequest(SourceId, 2));
+
+        Assert.Equal(
+            RecommendationModelClientOutcome.Succeeded,
+            evaluation.Outcome);
+        Assert.Equal(
+            RecommendationModelClientOutcome.Unavailable,
+            inference.Outcome);
+    }
+
+    [Fact]
+    public async Task Evaluation_failures_do_not_open_the_inference_circuit()
+    {
+        var requestCount = 0;
+        var client = CreateClient(new DelegateHandler(request =>
+        {
+            requestCount++;
+            return request.RequestUri!.AbsolutePath.EndsWith(
+                "/evaluate",
+                StringComparison.Ordinal)
+                    ? new HttpResponseMessage(HttpStatusCode.ServiceUnavailable)
+                    : JsonResponse(CreateSimilarJson());
+        }));
+        var evaluationRequest = RecommendationModelEvaluationTestData.Request();
+
+        await client.EvaluateAsync(evaluationRequest);
+        await client.EvaluateAsync(evaluationRequest);
+        await client.EvaluateAsync(evaluationRequest);
+        await client.EvaluateAsync(evaluationRequest);
+        var inference = await client.GetSimilarAsync(
+            new RecommendationModelSimilarRequest(SourceId, 2));
+
+        Assert.Equal(5, requestCount);
+        Assert.Equal(
+            RecommendationModelClientOutcome.Succeeded,
+            inference.Outcome);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.ServiceUnavailable)]
     [InlineData(HttpStatusCode.BadGateway)]
@@ -282,18 +386,21 @@ public sealed class RecommendationModelClientTests
     }
 
     private static RecommendationModelClient CreateClient(
-        HttpMessageHandler handler)
+        HttpMessageHandler handler,
+        TimeSpan? timeout = null,
+        TimeSpan? evaluationTimeout = null)
     {
         var options = Options.Create(new RecommendationModelServiceOptions
         {
             BaseAddress = "https://model-service.test",
             ApiKey = ModelApiKey,
-            Timeout = TimeSpan.FromSeconds(1)
+            Timeout = timeout ?? TimeSpan.FromSeconds(1),
+            EvaluationTimeout = evaluationTimeout ?? TimeSpan.FromSeconds(3)
         });
         var httpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri(options.Value.BaseAddress),
-            Timeout = options.Value.Timeout
+            Timeout = Timeout.InfiniteTimeSpan
         };
         return new RecommendationModelClient(
             httpClient,
@@ -355,6 +462,13 @@ public sealed class RecommendationModelClientTests
         });
     }
 
+    private static string CreateEvaluationJson(string version)
+    {
+        return JsonSerializer.Serialize(
+            RecommendationModelEvaluationTestData.Response(version),
+            new JsonSerializerOptions(JsonSerializerDefaults.Web));
+    }
+
     private static readonly Guid SourceId = Guid.Parse(
         "00000000-0000-0000-0000-000000000001");
     private static readonly Guid CandidateOneId = Guid.Parse(
@@ -371,6 +485,19 @@ public sealed class RecommendationModelClientTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult(callback(request));
+        }
+    }
+
+    private sealed class AsyncDelegateHandler(
+        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>
+            callback)
+        : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            return callback(request, cancellationToken);
         }
     }
 }

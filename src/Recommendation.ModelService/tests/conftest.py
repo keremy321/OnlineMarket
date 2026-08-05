@@ -8,7 +8,7 @@ from uuid import UUID
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import Settings
+from app.config import EvaluationSettings, Settings
 from app.main import create_app
 
 API_KEY = "test-only-model-service-api-key"
@@ -17,7 +17,15 @@ SOURCE_ID = UUID("00000000-0000-0000-0000-000000000001")
 
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
-    app = create_app(Settings(API_KEY, tmp_path / "artifacts"))
+    app = create_app(
+        Settings(
+            API_KEY,
+            tmp_path / "artifacts",
+            evaluation=EvaluationSettings(
+                output_directory=tmp_path / "evaluation-reports"
+            ),
+        )
+    )
     with TestClient(app) as test_client:
         yield test_client
 
@@ -107,6 +115,30 @@ def als_training_payload(
     return payload
 
 
+@pytest.fixture
+def evaluation_payload() -> dict[str, object]:
+    subject_a = "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    subject_b = "v1.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    subject_c = "v1.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+    return {
+        "evaluationVersion": "temporal-test-v1",
+        "catalogueProductIds": [
+            f"00000000-0000-0000-0000-{key:012d}" for key in range(1, 6)
+        ],
+        "candidateProductIds": [
+            f"00000000-0000-0000-0000-{key:012d}" for key in range(1, 6)
+        ],
+        "interactions": [
+            evaluation_interaction(1, subject_a, "2026-01-01T00:00:00Z", [(1, 2)]),
+            evaluation_interaction(2, subject_a, "2026-01-02T00:00:00Z", [(2, 1)]),
+            evaluation_interaction(3, subject_b, "2026-01-01T00:00:00Z", [(1, 1)]),
+            evaluation_interaction(4, subject_b, "2026-01-03T00:00:00Z", [(2, 1)]),
+            evaluation_interaction(5, subject_c, "2026-01-01T00:00:00Z", [(3, 1)]),
+            evaluation_interaction(6, subject_c, "2026-01-04T00:00:00Z", [(1, 1)]),
+        ],
+    }
+
+
 def product_payload(
     key: int,
     name: str,
@@ -147,3 +179,14 @@ def interaction_payload(
             for product_key, quantity in items
         ],
     }
+
+
+def evaluation_interaction(
+    order_key: int,
+    subject_id: str,
+    occurred_at_utc: str,
+    items: list[tuple[int, int]],
+) -> dict[str, object]:
+    payload = interaction_payload(order_key, subject_id, items)
+    payload["occurredAtUtc"] = occurred_at_utc
+    return payload

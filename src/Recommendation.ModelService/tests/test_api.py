@@ -18,6 +18,7 @@ def test_health_endpoint_is_public(client: TestClient) -> None:
 def test_model_endpoints_require_authentication(
     client: TestClient,
     training_payload: dict[str, object],
+    evaluation_payload: dict[str, object],
 ) -> None:
     missing = client.post("/api/v1/models/train", json=training_payload)
     invalid = client.post(
@@ -33,10 +34,15 @@ def test_model_endpoints_require_authentication(
             "excludePreviouslyPurchased": True,
         },
     )
+    evaluation = client.post(
+        "/api/v1/models/evaluate",
+        json=evaluation_payload,
+    )
 
     assert missing.status_code == 401
     assert invalid.status_code == 401
     assert personalized.status_code == 401
+    assert evaluation.status_code == 401
     assert invalid.json()["code"] == "Authentication.ApiKeyInvalid"
 
 
@@ -315,6 +321,59 @@ def test_personalized_contract_rejects_invalid_subject_and_unknown_fields(
 
     assert invalid.status_code == 422
     assert unknown.status_code == 422
+
+
+def test_evaluation_endpoint_returns_metrics_without_identifiers(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    evaluation_payload: dict[str, object],
+) -> None:
+    response = client.post(
+        "/api/v1/models/evaluate",
+        json=evaluation_payload,
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    serialized = response.text
+    assert body["status"] == "Succeeded"
+    assert body["models"]["popularity"]["status"] == "Evaluated"
+    assert body["models"]["als"]["status"] == "Evaluated"
+    assert body["models"]["tfidf"]["status"] == "NotEvaluated"
+    assert body["models"]["fbt"]["status"] == "NotEvaluated"
+    assert "subjectId" not in serialized
+    assert "customerId" not in serialized
+    assert "v1.AAA" not in serialized
+
+
+def test_evaluation_contract_is_strict_and_requires_utc_timestamps(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    evaluation_payload: dict[str, object],
+) -> None:
+    with_extra = deepcopy(evaluation_payload)
+    with_extra["customerId"] = "50000000-0000-0000-0000-000000000001"
+    without_utc = deepcopy(evaluation_payload)
+    interactions = without_utc["interactions"]
+    assert isinstance(interactions, list)
+    first = interactions[0]
+    assert isinstance(first, dict)
+    first["occurredAtUtc"] = "2026-01-01T00:00:00"
+
+    extra = client.post(
+        "/api/v1/models/evaluate",
+        json=with_extra,
+        headers=auth_headers,
+    )
+    invalid_time = client.post(
+        "/api/v1/models/evaluate",
+        json=without_utc,
+        headers=auth_headers,
+    )
+
+    assert extra.status_code == 422
+    assert invalid_time.status_code == 422
 
 
 def infer(

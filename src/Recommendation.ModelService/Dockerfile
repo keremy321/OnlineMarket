@@ -18,7 +18,7 @@ COPY requirements.txt ./
 RUN python -m pip install --requirement requirements.txt
 
 COPY app ./app
-RUN mkdir -p /app/artifacts \
+RUN mkdir -p /app/artifacts /app/evaluation-reports \
     && chown -R modelservice:modelservice /app
 
 USER modelservice

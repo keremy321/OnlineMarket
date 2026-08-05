@@ -931,6 +931,9 @@ Minimal confirmed market-order snapshot for popularity, affinity, and personal p
 - Implicit ALS uses the existing SubjectId index and order-item snapshots; it
   adds no RecommendationDb table or migration. Recommendation.Api may use the
   retained CustomerId only to load local fallback purchase history.
+- Temporal evaluation uses the stored confirmed-order `OccurredAtUtc` and
+  stable `OrderId` tie-breaker through an evaluation-only snapshot. It adds no
+  table or migration and holds no SQL transaction during the Python call.
 
 
 ### `OrderSnapshotItems`

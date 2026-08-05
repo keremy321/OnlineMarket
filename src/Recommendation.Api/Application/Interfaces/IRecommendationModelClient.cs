@@ -18,4 +18,9 @@ public interface IRecommendationModelClient
         RecommendationModelPersonalizedClientResponse>> GetPersonalizedAsync(
             RecommendationModelPersonalizedRequest request,
             CancellationToken cancellationToken = default);
+
+    Task<RecommendationModelClientResult<
+        RecommendationModelEvaluationClientResponse>> EvaluateAsync(
+            RecommendationModelEvaluationRequest request,
+            CancellationToken cancellationToken = default);
 }

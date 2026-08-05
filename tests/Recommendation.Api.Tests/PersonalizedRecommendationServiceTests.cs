@@ -278,6 +278,14 @@ public sealed class PersonalizedRecommendationServiceTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<RecommendationModelClientResult<
+            RecommendationModelEvaluationClientResponse>> EvaluateAsync(
+                RecommendationModelEvaluationRequest request,
+                CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private static readonly Guid PurchasedId = Guid.Parse(
