@@ -37,6 +37,10 @@ public sealed class ProductSnapshotConfiguration : IEntityTypeConfiguration<Prod
             .HasMaxLength(200)
             .IsRequired();
 
+        builder.Property(product => product.Description)
+            .HasColumnType("nvarchar(2000)")
+            .HasMaxLength(2000);
+
         builder.Property(product => product.CategoryId)
             .HasColumnType("uniqueidentifier");
 

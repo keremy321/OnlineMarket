@@ -32,7 +32,12 @@ public sealed class RecommendationDbContextSqlServerTests(
         await context.Database.MigrateAsync();
 
         Assert.Empty(await context.Database.GetPendingMigrationsAsync());
-        Assert.Single(await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(
+            [
+                "20260729111303_InitialRecommendationSchema",
+                "20260805071301_AddRecommendationProductDescription"
+            ],
+            await context.Database.GetAppliedMigrationsAsync());
     }
 
     [Fact]

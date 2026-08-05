@@ -339,6 +339,14 @@ paket-files/
 # Python Tools for Visual Studio (PTVS)
 __pycache__/
 *.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.python-packages/
+!src/Recommendation.ModelService/artifacts/
+src/Recommendation.ModelService/artifacts/*
+!src/Recommendation.ModelService/artifacts/.gitkeep
 
 # Cake - Uncomment if you are using it
 # tools/**
@@ -485,3 +493,15 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Python virtual environment and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Generated recommendation model artifacts
+src/Recommendation.ModelService/artifacts/*
+!src/Recommendation.ModelService/artifacts/.gitkeep

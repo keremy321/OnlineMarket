@@ -46,8 +46,21 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     ICartCompletionRecommendationService,
     CartCompletionRecommendationService>();
+builder.Services.AddScoped<
+    IModelTrainingSnapshotStore,
+    SqlServerModelTrainingSnapshotStore>();
+builder.Services.AddScoped<
+    IRecommendationModelOrchestrationService,
+    RecommendationModelOrchestrationService>();
+builder.Services.AddScoped<
+    ISimilarProductStore,
+    SqlServerSimilarProductStore>();
+builder.Services.AddScoped<
+    ISimilarRecommendationService,
+    SimilarRecommendationService>();
 builder.Services.AddSingleton<RecommendationEventValidator>();
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<RecommendationModelCircuitBreaker>();
 builder.Services
     .AddOptions<PopularityRecommendationOptions>()
     .Bind(builder.Configuration.GetSection(
@@ -56,6 +69,34 @@ builder.Services
         options => options.IsValid(),
         $"Configuration section '{PopularityRecommendationOptions.SectionName}' is invalid.")
     .ValidateOnStart();
+builder.Services
+    .AddOptions<SimilarRecommendationOptions>()
+    .Bind(builder.Configuration.GetSection(
+        SimilarRecommendationOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        $"Configuration section '{SimilarRecommendationOptions.SectionName}' is invalid.")
+    .ValidateOnStart();
+builder.Services
+    .AddOptions<RecommendationModelServiceOptions>()
+    .Bind(builder.Configuration.GetSection(
+        RecommendationModelServiceOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        $"Configuration section '{RecommendationModelServiceOptions.SectionName}' is invalid.")
+    .ValidateOnStart();
+builder.Services.AddHttpClient<
+    IRecommendationModelClient,
+    RecommendationModelClient>((services, client) =>
+    {
+        var options = services
+            .GetRequiredService<
+                Microsoft.Extensions.Options.IOptions<
+                    RecommendationModelServiceOptions>>()
+            .Value;
+        client.BaseAddress = new Uri(options.BaseAddress, UriKind.Absolute);
+        client.Timeout = options.Timeout;
+    });
 builder.Services
     .AddOptions<CartCompletionRecommendationOptions>()
     .Bind(builder.Configuration.GetSection(

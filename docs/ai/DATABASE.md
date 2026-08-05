@@ -860,6 +860,7 @@ Recommendation-owned readable product snapshot populated by `ProductSnapshotChan
 | `ProductId` | `uniqueidentifier` | No | — | Primary key; copied Online Market Product ID |
 | `Sku` | `nvarchar(64)` | No | — | Required, unique |
 | `Name` | `nvarchar(200)` | No | — | Required; debugging/explanation |
+| `Description` | `nvarchar(2000)` | Yes | — | Content-similarity input; no catalogue authority |
 | `CategoryId` | `uniqueidentifier` | No | — | External ID; no cross-database FK |
 | `ParentCategoryId` | `uniqueidentifier` | Yes | — | External ID |
 | `BrandId` | `uniqueidentifier` | No | — | External ID |

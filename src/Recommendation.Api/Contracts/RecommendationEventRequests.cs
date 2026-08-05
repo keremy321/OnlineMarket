@@ -23,6 +23,8 @@ public sealed record ProductSnapshotChangedV1Request
     [JsonRequired]
     public string? Name { get; init; }
 
+    public string? Description { get; init; }
+
     [JsonRequired]
     public Guid CategoryId { get; init; }
 

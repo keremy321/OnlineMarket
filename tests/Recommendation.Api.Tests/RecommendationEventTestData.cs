@@ -23,6 +23,7 @@ internal static class RecommendationEventTestData
             ProductId = productId ?? Guid.NewGuid(),
             Sku = sku ?? $"SKU-{Guid.NewGuid():N}",
             Name = name ?? "Recommendation product",
+            Description = "Recommendation product description",
             CategoryId = Guid.NewGuid(),
             ParentCategoryId = Guid.NewGuid(),
             BrandId = Guid.NewGuid(),
