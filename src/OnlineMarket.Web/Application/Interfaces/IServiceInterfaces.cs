@@ -12,6 +12,11 @@ public interface IAuthService
     Task<Customer?> GetCustomerByEmailAsync(string email);
 }
 
+public interface ICustomerIdentityResolver
+{
+    Task<Guid?> GetActiveCustomerIdByUserIdAsync(Guid userId);
+}
+
 public interface ICustomerAddressService
 {
     Task<List<CustomerAddressDto>> GetCustomerAddressesAsync(Guid customerId);

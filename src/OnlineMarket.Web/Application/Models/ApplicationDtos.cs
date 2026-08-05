@@ -170,7 +170,10 @@ public record RecommendationItemDto(
     [property: System.Text.Json.Serialization.JsonPropertyName("reasonText")]
     string Reason,
     decimal Score,
-    ProductDto? ProductDetails = null
+    ProductDto? ProductDetails = null,
+    string? RecommendationType = null,
+    string? ReasonCode = null,
+    PersonalizedRecommendationMetricsDto? PersonalizedMetrics = null
 );
 
 public sealed record SimilarRecommendationResponseDto(
@@ -186,6 +189,38 @@ public sealed record SimilarRecommendationResponseDto(
     string ReasonText,
     [property: System.Text.Json.Serialization.JsonPropertyName("metrics")]
     System.Text.Json.JsonElement? Metrics = null);
+
+public sealed record PersonalizedRecommendationResponseDto(
+    [property: System.Text.Json.Serialization.JsonPropertyName("productId")]
+    Guid ProductId,
+    [property: System.Text.Json.Serialization.JsonPropertyName("score")]
+    decimal Score,
+    [property: System.Text.Json.Serialization.JsonPropertyName("recommendationType")]
+    string RecommendationType,
+    [property: System.Text.Json.Serialization.JsonPropertyName("reasonCode")]
+    string ReasonCode,
+    [property: System.Text.Json.Serialization.JsonPropertyName("reasonText")]
+    string ReasonText,
+    [property: System.Text.Json.Serialization.JsonPropertyName("metrics")]
+    PersonalizedRecommendationMetricsDto? Metrics);
+
+public sealed record PersonalizedRecommendationMetricsDto(
+    [property: System.Text.Json.Serialization.JsonPropertyName("confidence")]
+    decimal? Confidence,
+    [property: System.Text.Json.Serialization.JsonPropertyName("rankingSource")]
+    string RankingSource,
+    [property: System.Text.Json.Serialization.JsonPropertyName("modelVersion")]
+    string? ModelVersion,
+    [property: System.Text.Json.Serialization.JsonPropertyName("alsScore")]
+    decimal? AlsScore,
+    [property: System.Text.Json.Serialization.JsonPropertyName("contentAffinityScore")]
+    decimal? ContentAffinityScore,
+    [property: System.Text.Json.Serialization.JsonPropertyName("associationScore")]
+    decimal? AssociationScore,
+    [property: System.Text.Json.Serialization.JsonPropertyName("popularityScore")]
+    decimal? PopularityScore,
+    [property: System.Text.Json.Serialization.JsonPropertyName("finalScore")]
+    decimal? FinalScore);
 
 public sealed record AdminDashboardDto(
     int TotalProducts,

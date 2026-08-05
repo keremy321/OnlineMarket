@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using OnlineMarket.Web.Application.Interfaces;
 using OnlineMarket.Web.Application.Models;
+using OnlineMarket.Web.Application.Options;
 using OnlineMarket.Web.Models;
 
 namespace OnlineMarket.Web.Controllers;
@@ -11,38 +13,48 @@ public class HomeController : Controller
 {
     private readonly ICatalogService _catalogService;
     private readonly IRecommendationClient _recommendationClient;
-    private readonly IAuthService _authService;
+    private readonly ICustomerIdentityResolver _customerIdentityResolver;
     private readonly ICartService _cartService;
     private readonly ILogger<HomeController> _logger;
+    private readonly int _personalizedDisplayLimit;
 
     public HomeController(
         ICatalogService catalogService,
         IRecommendationClient recommendationClient,
-        IAuthService authService,
+        ICustomerIdentityResolver customerIdentityResolver,
         ICartService cartService,
+        IOptions<RecommendationUiOptions> recommendationUiOptions,
         ILogger<HomeController> logger)
     {
         _catalogService = catalogService;
         _recommendationClient = recommendationClient;
-        _authService = authService;
+        _customerIdentityResolver = customerIdentityResolver;
         _cartService = cartService;
         _logger = logger;
+        _personalizedDisplayLimit = recommendationUiOptions.Value
+            .PersonalizedDisplayLimit;
     }
 
     private async Task<Guid?> GetCurrentCustomerIdAsync()
     {
+        if (User.Identity?.IsAuthenticated != true)
+        {
+            return null;
+        }
+
         try
         {
             var userIdStr = User.FindFirstValue(ClaimTypes.NameIdentifier);
             if (Guid.TryParse(userIdStr, out var userId))
             {
-                var customer = await _authService.GetCustomerByUserIdAsync(userId);
-                return customer?.Id;
+                return await _customerIdentityResolver
+                    .GetActiveCustomerIdByUserIdAsync(userId);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _logger.LogWarning(ex, "Failed to resolve current customer ID.");
+            _logger.LogWarning(
+                "Authenticated customer resolution failed; personalized recommendations will be hidden.");
         }
         return null;
     }
@@ -57,7 +69,7 @@ public class HomeController : Controller
 
             var customerId = await GetCurrentCustomerIdAsync();
             var personalizedRecsTask = customerId.HasValue
-                ? _recommendationClient.GetPersonalizedRecommendationsAsync(customerId.Value, 4)
+                ? GetPersonalizedRecommendationsAsync(customerId.Value)
                 : Task.FromResult(new List<RecommendationItemDto>());
 
             // Fetch cart completion if customer has active cart
@@ -73,9 +85,10 @@ public class HomeController : Controller
                         cartCompletionRecsTask = _recommendationClient.GetCartCompletionRecommendationsAsync(cartProductIds, 4);
                     }
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    _logger.LogWarning(ex, "Failed to fetch cart for customer {CustomerId} on Home page.", customerId);
+                    _logger.LogWarning(
+                        "The active cart could not be loaded on the home page.");
                 }
             }
 
@@ -99,7 +112,8 @@ public class HomeController : Controller
 
             // 4. Enrich recommendations
             var popularRecs = await EnrichAndValidateRecommendationsAsync(rawPopular);
-            var personalizedRecs = await EnrichAndValidateRecommendationsAsync(rawPersonalized);
+            var personalizedRecs = await ResolvePersonalizedRecommendationsAsync(
+                rawPersonalized);
             var cartCompletionRecs = await EnrichAndValidateRecommendationsAsync(rawCartCompletion);
 
             // Also fetch FBT & Similar based on first featured product if available
@@ -132,6 +146,63 @@ public class HomeController : Controller
         {
             _logger.LogError(ex, "Error occurred while rendering Home page.");
             return View(new HomeViewModel());
+        }
+    }
+
+    private async Task<List<RecommendationItemDto>>
+        GetPersonalizedRecommendationsAsync(Guid customerId)
+    {
+        try
+        {
+            return await _recommendationClient
+                .GetPersonalizedRecommendationsAsync(
+                    customerId,
+                    _personalizedDisplayLimit);
+        }
+        catch (Exception)
+        {
+            _logger.LogWarning(
+                "Personalized recommendations were unavailable; the home-page section will be hidden.");
+            return [];
+        }
+    }
+
+    private async Task<List<RecommendationItemDto>>
+        ResolvePersonalizedRecommendationsAsync(
+            List<RecommendationItemDto> recommendations)
+    {
+        var orderedRecommendations = recommendations
+            .Where(item => item.ProductId != Guid.Empty)
+            .DistinctBy(item => item.ProductId)
+            .ToList();
+        if (orderedRecommendations.Count == 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            var productsById = await _catalogService.GetProductsByIdsAsync(
+                orderedRecommendations.Select(item => item.ProductId));
+
+            return orderedRecommendations
+                .Where(item =>
+                    productsById.TryGetValue(item.ProductId, out var product)
+                    && product.IsActive
+                    && product.IsInStock
+                    && product.StockQuantity > 0)
+                .Select(item => item with
+                {
+                    ProductDetails = productsById[item.ProductId]
+                })
+                .Take(_personalizedDisplayLimit)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            _logger.LogWarning(
+                "Personalized recommendation products could not be resolved; the home-page section will be hidden.");
+            return [];
         }
     }
 
