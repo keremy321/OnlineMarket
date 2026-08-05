@@ -25,9 +25,18 @@ def test_model_endpoints_require_authentication(
         json=training_payload,
         headers={"X-Api-Key": "wrong"},
     )
+    personalized = client.post(
+        "/api/v1/models/personalized",
+        json={
+            "subjectId": "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "limit": 8,
+            "excludePreviouslyPurchased": True,
+        },
+    )
 
     assert missing.status_code == 401
     assert invalid.status_code == 401
+    assert personalized.status_code == 401
     assert invalid.json()["code"] == "Authentication.ApiKeyInvalid"
 
 
@@ -94,6 +103,28 @@ def test_training_contract_rejects_duplicate_and_unknown_product_ids(
     assert unknown_response.status_code == 422
 
 
+def test_empty_interactions_preserve_tfidf_with_clear_als_status(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    training_payload: dict[str, object],
+) -> None:
+    payload = deepcopy(training_payload)
+    payload["interactions"] = []
+
+    response = client.post(
+        "/api/v1/models/train",
+        json=payload,
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["metadata"]
+    assert metadata["subjectCount"] == 0
+    assert metadata["interactionCount"] == 0
+    assert metadata["components"]["tfidf"]["status"] == "Succeeded"
+    assert metadata["components"]["als"]["status"] == "InsufficientData"
+
+
 def test_training_contract_requires_opaque_subject_id_and_rejects_customer_id(
     client: TestClient,
     auth_headers: dict[str, str],
@@ -122,9 +153,7 @@ def test_training_contract_requires_opaque_subject_id_and_rejects_customer_id(
     assert isinstance(customer_interactions, list)
     customer_interaction = customer_interactions[0]
     assert isinstance(customer_interaction, dict)
-    customer_interaction["customerId"] = (
-        "50000000-0000-0000-0000-000000000001"
-    )
+    customer_interaction["customerId"] = "50000000-0000-0000-0000-000000000001"
 
     for payload in (missing, empty, invalid, with_customer_id):
         response = client.post(
@@ -152,9 +181,16 @@ def test_training_and_similarity_filter_and_order_deterministically(
     metadata = training.json()["metadata"]
     assert metadata["modelVersion"] == "tfidf-test-v1"
     assert metadata["productCount"] == 5
+    assert metadata["subjectCount"] == 1
+    assert metadata["interactionCount"] == 2
     assert metadata["algorithm"] == "tfidf-product-content-cosine-v1"
+    assert metadata["algorithmComponents"] == ["tfidf-product-content-cosine-v1"]
+    assert metadata["components"]["tfidf"]["status"] == "Succeeded"
+    assert metadata["components"]["als"]["status"] == "InsufficientData"
+    assert metadata["alsParameters"]["randomSeed"] == 42
     assert len(metadata["inputHash"]) == 64
     assert "scikit-learn" in metadata["libraryVersions"]
+    assert "implicit" in metadata["libraryVersions"]
     assert first.status_code == 200
     assert first.json() == second.json()
 
@@ -198,6 +234,89 @@ def test_inference_and_current_report_unavailable_without_model(
     }
 
 
+def test_personalized_known_subject_is_deterministic_and_filtered(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    als_training_payload: dict[str, object],
+) -> None:
+    training = client.post(
+        "/api/v1/models/train",
+        json=als_training_payload,
+        headers=auth_headers,
+    )
+    first = infer_personalized(client, auth_headers, limit=100)
+    second = infer_personalized(client, auth_headers, limit=100)
+
+    assert training.status_code == 200
+    metadata = training.json()["metadata"]
+    assert metadata["subjectCount"] == 3
+    assert metadata["interactionCount"] == 7
+    assert metadata["components"]["als"]["status"] == "Succeeded"
+    assert metadata["algorithmComponents"] == [
+        "tfidf-product-content-cosine-v1",
+        "implicit-als-v1",
+    ]
+    assert first.status_code == 200
+    assert first.json() == second.json()
+    body = first.json()
+    assert body["strategy"] == "implicit_als"
+    recommendations: list[dict[str, Any]] = body["recommendations"]
+    assert [item["productId"] for item in recommendations] == [
+        "00000000-0000-0000-0000-000000000003"
+    ]
+    assert all(0 <= item["score"] <= 1 for item in recommendations)
+
+
+def test_personalized_unknown_subject_and_limit_contract(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    als_training_payload: dict[str, object],
+) -> None:
+    client.post(
+        "/api/v1/models/train",
+        json=als_training_payload,
+        headers=auth_headers,
+    )
+    unknown = infer_personalized(
+        client,
+        auth_headers,
+        subject_id="v1.ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
+        limit=8,
+    )
+    invalid = infer_personalized(client, auth_headers, limit=0)
+    capped = infer_personalized(client, auth_headers, limit=100)
+
+    assert unknown.status_code == 200
+    assert unknown.json()["strategy"] == "cold_start_unavailable"
+    assert unknown.json()["recommendations"] == []
+    assert invalid.status_code == 422
+    assert capped.status_code == 200
+    assert len(capped.json()["recommendations"]) <= 50
+
+
+def test_personalized_contract_rejects_invalid_subject_and_unknown_fields(
+    client: TestClient,
+    auth_headers: dict[str, str],
+) -> None:
+    invalid = client.post(
+        "/api/v1/models/personalized",
+        json={"subjectId": "not-valid", "limit": 8},
+        headers=auth_headers,
+    )
+    unknown = client.post(
+        "/api/v1/models/personalized",
+        json={
+            "subjectId": "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "limit": 8,
+            "customerId": "50000000-0000-0000-0000-000000000001",
+        },
+        headers=auth_headers,
+    )
+
+    assert invalid.status_code == 422
+    assert unknown.status_code == 422
+
+
 def infer(
     client: TestClient,
     headers: dict[str, str],
@@ -207,5 +326,23 @@ def infer(
     return client.post(
         "/api/v1/models/similar",
         json={"productId": str(SOURCE_ID), "limit": limit},
+        headers=headers,
+    )
+
+
+def infer_personalized(
+    client: TestClient,
+    headers: dict[str, str],
+    *,
+    subject_id: str = "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    limit: int,
+) -> Response:
+    return client.post(
+        "/api/v1/models/personalized",
+        json={
+            "subjectId": subject_id,
+            "limit": limit,
+            "excludePreviouslyPurchased": True,
+        },
         headers=headers,
     )

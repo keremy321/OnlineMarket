@@ -928,6 +928,9 @@ Minimal confirmed market-order snapshot for popularity, affinity, and personal p
 - No contact, address, payment, or financial line data.
 - Derive `SubjectId` only inside `Recommendation.Api` by the versioned keyed-HMAC contract. New ingestions require it; model training rejects any missing or malformed value.
 - Direct `CustomerId`, the derivation key, and customer-to-subject mappings must not enter Python requests, artifacts, or logs.
+- Implicit ALS uses the existing SubjectId index and order-item snapshots; it
+  adds no RecommendationDb table or migration. Recommendation.Api may use the
+  retained CustomerId only to load local fallback purchase history.
 
 
 ### `OrderSnapshotItems`

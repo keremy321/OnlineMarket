@@ -492,9 +492,13 @@ Suggested interaction weight:
 InteractionWeight =
     1
   + log(1 + TotalQuantity)
-  + RecencyWeight
-  + RepeatPurchaseWeight
+  + log(1 + max(RepeatPurchaseCount - 1, 0))
 ```
+
+The MVP deliberately defers recency weighting. It aggregates deterministic
+`SubjectId + ProductId` pairs across confirmed orders, uses a configured random
+seed and single-threaded ALS/BLAS execution, and reports insufficient data
+without failing the TF-IDF component.
 
 Input:
 
@@ -568,6 +572,15 @@ POST /internal/v1/predict/similar
 POST /internal/v1/predict/frequently-bought-together
 GET  /health/live
 GET  /health/ready
+```
+
+The implemented route names remain consistent with the existing service:
+
+```text
+POST /api/v1/models/train
+POST /api/v1/models/similar
+POST /api/v1/models/personalized
+GET  /api/v1/models/current
 ```
 
 The Python service must not be called directly by the browser.
@@ -669,6 +682,12 @@ Activation process:
 6. Atomically update `current.json`.
 7. Keep the previous model for rollback.
 
+Artifact schema v2 stores the TF-IDF state plus an optional `implicit` ALS
+model, deterministic SubjectId/product mappings, and purchased-product index
+sets. The loader continues accepting schema-v1 TF-IDF-only joblib artifacts.
+Every temporary artifact is deserialized and dimension-validated before its
+atomic rename and in-memory activation.
+
 Do not overwrite the active model in place.
 
 ---
@@ -761,6 +780,7 @@ hybrid
 popularity_fallback
 content_fallback
 association_fallback
+personalized_preference_fallback
 ```
 
 ---

@@ -130,6 +130,7 @@ The internal endpoints are:
 GET  /health
 POST /api/v1/models/train
 POST /api/v1/models/similar
+POST /api/v1/models/personalized
 GET  /api/v1/models/current
 ```
 
@@ -138,11 +139,18 @@ GET  /api/v1/models/current
 ```text
 POST /api/v1/recommendations/recalculate-models
 GET  /api/v1/recommendations/similar/{productId}?limit={value}
+GET  /api/v1/recommendations/customers/{customerId}?limit={value}
 ```
 
 The stored market `CustomerId` remains internal to Recommendation.Api. Python
 treats `SubjectId` as an opaque string; it never receives the derivation key or
 the direct identifier.
+
+Personalized model requests contain `subjectId`, a capped `limit`, and
+`excludePreviouslyPurchased`. Responses contain model version, strategy, and
+recommendation-owned product IDs/scores/reason metadata only. Unknown subjects
+return an explicit cold-start result so Recommendation.Api can use its local
+preference/popularity fallback.
 
 ### OrderReadyForErpV1
 

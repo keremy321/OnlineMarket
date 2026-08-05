@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from copy import deepcopy
 from pathlib import Path
 from uuid import UUID
 
@@ -75,9 +76,7 @@ def training_payload() -> dict[str, object]:
         "interactions": [
             {
                 "orderId": "40000000-0000-0000-0000-000000000001",
-                "subjectId": (
-                    "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-                ),
+                "subjectId": ("v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
                 "items": [
                     {"productId": str(SOURCE_ID), "quantity": 1},
                     {
@@ -88,6 +87,24 @@ def training_payload() -> dict[str, object]:
             }
         ],
     }
+
+
+@pytest.fixture
+def als_training_payload(
+    training_payload: dict[str, object],
+) -> dict[str, object]:
+    payload = deepcopy(training_payload)
+    subject_a = "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    subject_b = "v1.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+    subject_c = "v1.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
+    payload["modelVersion"] = "model-set-test-v1"
+    payload["interactions"] = [
+        interaction_payload(1, subject_a, [(1, 1)]),
+        interaction_payload(2, subject_a, [(1, 2), (2, 1)]),
+        interaction_payload(3, subject_b, [(2, 2), (3, 1)]),
+        interaction_payload(4, subject_c, [(1, 1), (3, 2)]),
+    ]
+    return payload
 
 
 def product_payload(
@@ -111,4 +128,22 @@ def product_payload(
         "price": "100.00",
         "isActive": is_active,
         "isInStock": is_in_stock,
+    }
+
+
+def interaction_payload(
+    order_key: int,
+    subject_id: str,
+    items: list[tuple[int, int]],
+) -> dict[str, object]:
+    return {
+        "orderId": f"40000000-0000-0000-0000-{order_key:012d}",
+        "subjectId": subject_id,
+        "items": [
+            {
+                "productId": f"00000000-0000-0000-0000-{product_key:012d}",
+                "quantity": quantity,
+            }
+            for product_key, quantity in items
+        ],
     }

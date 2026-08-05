@@ -16,5 +16,5 @@ packages = ["app"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["joblib", "sklearn.*", "scipy.*"]
+module = ["implicit.*", "joblib", "sklearn.*", "scipy.*", "threadpoolctl"]
 ignore_missing_imports = true

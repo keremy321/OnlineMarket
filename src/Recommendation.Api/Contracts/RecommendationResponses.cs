@@ -57,6 +57,19 @@ public sealed record SimilarityMetricsResponse(
     string RankingSource,
     string? ModelVersion);
 
+public sealed record PersonalizedRecommendationResponse(
+    Guid ProductId,
+    decimal Score,
+    string RecommendationType,
+    string ReasonCode,
+    string ReasonText,
+    PersonalizedMetricsResponse Metrics);
+
+public sealed record PersonalizedMetricsResponse(
+    decimal? Confidence,
+    string RankingSource,
+    string? ModelVersion);
+
 public sealed record RecommendationRecalculationResponse(
     Guid RunId,
     string Status,
@@ -67,5 +80,25 @@ public sealed record RecommendationModelRecalculationResponse(
     string Status,
     DateTime TrainedAtUtc,
     int ProductCount,
+    int SubjectCount,
+    int InteractionCount,
     string InputHash,
-    string Algorithm);
+    string Algorithm,
+    IReadOnlyList<string> AlgorithmComponents,
+    RecommendationModelComponentStatusesContract Components,
+    RecommendationModelAlsParametersContract AlsParameters);
+
+public sealed record RecommendationModelComponentStatusesContract(
+    RecommendationModelComponentStatusContract Tfidf,
+    RecommendationModelComponentStatusContract Als);
+
+public sealed record RecommendationModelComponentStatusContract(
+    string Status,
+    int TrainingDurationMilliseconds);
+
+public sealed record RecommendationModelAlsParametersContract(
+    int Factors,
+    decimal Regularization,
+    int Iterations,
+    decimal Alpha,
+    int RandomSeed);

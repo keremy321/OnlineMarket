@@ -5,10 +5,12 @@ import json
 import platform
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from time import perf_counter
 from typing import Any
 from uuid import UUID
 
 import fastapi
+import implicit
 import joblib
 import numpy as np
 import pydantic
@@ -18,16 +20,24 @@ from scipy.sparse import csr_matrix
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
+from .als import ALGORITHM as ALS_ALGORITHM
+from .als import TrainedAlsComponent, train_als_component
+from .config import AlsSettings
 from .contracts import (
+    AlsParameters,
     ArtifactMetadata,
+    ModelComponentState,
+    ModelComponentStatus,
+    ModelComponentStatuses,
     ModelTrainingRequest,
     OrderProductInteraction,
     SimilarProductItem,
 )
 from .features import build_product_document
 
-ALGORITHM = "tfidf-product-content-cosine-v1"
-ARTIFACT_SCHEMA_VERSION = 1
+TFIDF_ALGORITHM = "tfidf-product-content-cosine-v1"
+ARTIFACT_SCHEMA_VERSION = 2
+LEGACY_ARTIFACT_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +47,7 @@ class TrainedModel:
     matrix: csr_matrix
     product_ids: tuple[UUID, ...]
     availability: tuple[bool, ...]
+    als: TrainedAlsComponent | None = None
 
     def to_artifact(self) -> dict[str, Any]:
         return {
@@ -46,15 +57,22 @@ class TrainedModel:
             "matrix": self.matrix,
             "productIds": [str(product_id) for product_id in self.product_ids],
             "availability": list(self.availability),
+            "als": None
+            if self.als is None
+            else {
+                "model": self.als.model,
+                "subjectIds": list(self.als.subject_ids),
+                "productIds": [str(product_id) for product_id in self.als.product_ids],
+                "purchasedProductIndices": [
+                    sorted(indices) for indices in self.als.purchased_product_indices
+                ],
+            },
         }
 
 
 def calculate_input_hash(request: ModelTrainingRequest) -> str:
     products: list[dict[str, Any]] = sorted(
-        (
-            product.model_dump(mode="json")
-            for product in request.products
-        ),
+        (product.model_dump(mode="json") for product in request.products),
         key=lambda item: str(item["productId"]),
     )
     interactions: list[dict[str, Any]] = sorted(
@@ -87,8 +105,11 @@ def interaction_payload(
 def train_model(
     request: ModelTrainingRequest,
     *,
+    als_settings: AlsSettings | None = None,
     trained_at_utc: datetime | None = None,
 ) -> TrainedModel:
+    resolved_als_settings = als_settings or AlsSettings()
+    resolved_als_settings.validate()
     ordered_products = sorted(
         request.products,
         key=lambda product: product.productId.hex,
@@ -97,9 +118,8 @@ def train_model(
     if len(set(product_ids)) != len(product_ids):
         raise ValueError("Training products must have unique productId values.")
 
-    documents = [
-        build_product_document(product) for product in ordered_products
-    ]
+    tfidf_started = perf_counter()
+    documents = [build_product_document(product) for product in ordered_products]
     vectorizer = TfidfVectorizer(
         lowercase=False,
         norm="l2",
@@ -107,14 +127,53 @@ def train_model(
         dtype=np.float64,
     )
     matrix = vectorizer.fit_transform(documents).tocsr()
+    tfidf_duration = _duration_milliseconds(tfidf_started)
+    als_started = perf_counter()
+    als, _ = train_als_component(
+        request.interactions,
+        product_ids,
+        resolved_als_settings,
+    )
+    als_duration = _duration_milliseconds(als_started)
+    subject_count = len({interaction.subjectId for interaction in request.interactions})
+    interaction_count = sum(
+        len(interaction.items) for interaction in request.interactions
+    )
     trained_at = trained_at_utc or datetime.now(UTC)
+    algorithm_components = [TFIDF_ALGORITHM]
+    if als is not None:
+        algorithm_components.append(ALS_ALGORITHM)
     metadata = ArtifactMetadata(
         modelVersion=request.modelVersion,
         correlationId=request.correlationId,
         trainedAtUtc=trained_at,
         productCount=len(ordered_products),
+        subjectCount=subject_count,
+        interactionCount=interaction_count,
         inputHash=calculate_input_hash(request),
-        algorithm=ALGORITHM,
+        algorithm="+".join(algorithm_components),
+        algorithmComponents=algorithm_components,
+        components=ModelComponentStatuses(
+            tfidf=ModelComponentStatus(
+                status=ModelComponentState.SUCCEEDED,
+                trainingDurationMilliseconds=tfidf_duration,
+            ),
+            als=ModelComponentStatus(
+                status=(
+                    ModelComponentState.SUCCEEDED
+                    if als is not None
+                    else ModelComponentState.INSUFFICIENT_DATA
+                ),
+                trainingDurationMilliseconds=als_duration,
+            ),
+        ),
+        alsParameters=AlsParameters(
+            factors=resolved_als_settings.factors,
+            regularization=resolved_als_settings.regularization,
+            iterations=resolved_als_settings.iterations,
+            alpha=resolved_als_settings.alpha,
+            randomSeed=resolved_als_settings.random_seed,
+        ),
         libraryVersions={
             "python": platform.python_version(),
             "fastapi": fastapi.__version__,
@@ -123,6 +182,7 @@ def train_model(
             "joblib": joblib.__version__,
             "numpy": np.__version__,
             "scipy": scipy.__version__,
+            "implicit": implicit.__version__,
         },
     )
     return TrainedModel(
@@ -131,10 +191,14 @@ def train_model(
         matrix=matrix,
         product_ids=product_ids,
         availability=tuple(
-            product.isActive and product.isInStock
-            for product in ordered_products
+            product.isActive and product.isInStock for product in ordered_products
         ),
+        als=als,
     )
+
+
+def _duration_milliseconds(started: float) -> int:
+    return max(0, round((perf_counter() - started) * 1_000))
 
 
 def find_similar(

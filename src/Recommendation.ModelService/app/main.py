@@ -16,6 +16,8 @@ from .contracts import (
     ArtifactMetadata,
     ModelTrainingRequest,
     ModelTrainingResponse,
+    PersonalizedRecommendationsRequest,
+    PersonalizedRecommendationsResponse,
     SimilarProductsRequest,
     SimilarProductsResponse,
 )
@@ -30,8 +32,10 @@ LOGGER = logging.getLogger("recommendation_model_service")
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or Settings.from_environment()
+    resolved_settings.validate()
     model_service = RecommendationModelService(
-        ArtifactStore(resolved_settings.artifact_directory)
+        ArtifactStore(resolved_settings.artifact_directory),
+        resolved_settings.als,
     )
 
     @asynccontextmanager
@@ -122,9 +126,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         metadata = await run_in_threadpool(model_service.train, request)
         LOGGER.info(
             "Model training completed; model_version=%s product_count=%s "
-            "correlation_id=%s.",
+            "subject_count=%s interaction_count=%s tfidf_status=%s "
+            "als_status=%s correlation_id=%s.",
             metadata.modelVersion,
             metadata.productCount,
+            metadata.subjectCount,
+            metadata.interactionCount,
+            metadata.components.tfidf.status if metadata.components else None,
+            metadata.components.als.status if metadata.components else None,
             metadata.correlationId,
         )
         return ModelTrainingResponse(status="Succeeded", metadata=metadata)
@@ -146,6 +155,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             modelVersion=model_version,
             sourceProductId=request.productId,
             items=items,
+        )
+
+    @application.post(
+        "/api/v1/models/personalized",
+        response_model=PersonalizedRecommendationsResponse,
+        dependencies=[Depends(require_api_key)],
+    )
+    async def personalized(
+        request: PersonalizedRecommendationsRequest,
+    ) -> PersonalizedRecommendationsResponse:
+        model_version, strategy, recommendations = await run_in_threadpool(
+            model_service.personalized,
+            request.subjectId,
+            request.limit,
+            exclude_previously_purchased=(request.excludePreviouslyPurchased),
+        )
+        return PersonalizedRecommendationsResponse(
+            modelVersion=model_version,
+            strategy=strategy,
+            recommendations=recommendations,
         )
 
     @application.get(
