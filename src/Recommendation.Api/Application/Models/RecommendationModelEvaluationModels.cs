@@ -1,6 +1,7 @@
 namespace Recommendation.Api.Application.Models;
 
 public sealed record ModelEvaluationSnapshot(
+    IReadOnlyList<ModelProductTrainingSnapshot> Products,
     IReadOnlyList<Guid> CatalogueProductIds,
     IReadOnlyList<Guid> CandidateProductIds,
     IReadOnlyList<ModelEvaluationOrder> Interactions);
@@ -15,6 +16,7 @@ public sealed record RecommendationModelEvaluationRequest(
     string EvaluationVersion,
     IReadOnlyList<Guid> CatalogueProductIds,
     IReadOnlyList<Guid> CandidateProductIds,
+    IReadOnlyList<RecommendationModelProductRequest> Products,
     IReadOnlyList<RecommendationModelEvaluationOrderRequest> Interactions);
 
 public sealed record RecommendationModelEvaluationOrderRequest(
@@ -34,7 +36,8 @@ public sealed record RecommendationModelEvaluationClientResponse(
     RecommendationModelEvaluationModelsResponse Models,
     string ReportIdentifier,
     RecommendationModelEvaluationReportFilesResponse Reports,
-    IReadOnlyList<string> Limitations);
+    IReadOnlyList<string> Limitations,
+    RecommendationModelEvaluationComparisonResponse? Comparison);
 
 public sealed record RecommendationModelEvaluationDatasetResponse(
     int ProductCount,
@@ -70,6 +73,7 @@ public sealed record RecommendationModelEvaluationExcludedDataResponse(
 public sealed record RecommendationModelEvaluationModelsResponse(
     RecommendationModelEvaluationModelResponse Popularity,
     RecommendationModelEvaluationModelResponse Als,
+    RecommendationModelEvaluationModelResponse Hybrid,
     RecommendationModelEvaluationModelResponse Tfidf,
     RecommendationModelEvaluationModelResponse Fbt);
 
@@ -102,7 +106,15 @@ public sealed record RecommendationModelEvaluationParametersResponse(
     decimal? Regularization,
     int? Iterations,
     decimal? Alpha,
-    int? RandomSeed);
+    int? RandomSeed,
+    RecommendationModelHybridParametersResponse? Hybrid);
+
+public sealed record RecommendationModelEvaluationComparisonResponse(
+    decimal HybridMinusAlsPrecisionAt5,
+    decimal HybridMinusAlsRecallAt5,
+    decimal HybridMinusAlsHitRateAt5,
+    decimal HybridMinusAlsNdcgAt5,
+    decimal HybridMinusAlsCoverage);
 
 public sealed record RecommendationModelEvaluationReportFilesResponse(
     string JsonFile,

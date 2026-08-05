@@ -122,16 +122,17 @@ Two workers must not claim the same message.
   versioned HMAC-SHA256 and exports only that opaque value for order
   interactions. Direct market `CustomerId` and the derivation key never enter
   Python contracts, artifacts, or logs.
-- The Python model set combines TF-IDF with an optional implicit-feedback ALS
-  component. Deterministic subject/product mappings, factors, and purchased
-  product history are versioned atomically; legacy TF-IDF-only artifacts remain
-  valid.
+- Artifact schema v3 combines TF-IDF, optional implicit-feedback ALS,
+  normalized popularity, sparse directional association, and sparse content
+  neighbors. Deterministic mappings, factors, purchased history, weights, and
+  component metadata are versioned atomically; schema-v1/v2 artifacts remain
+  valid and serve their prior strategies.
 - Personalized façade requests derive `SubjectId` inside Recommendation.Api.
   Python/model/circuit failures and unknown subjects use a deterministic local
   category, brand, and popularity fallback.
 - Offline evaluation uses a dedicated Recommendation.Api snapshot store to
   export UTC order chronology and pseudonymous subjects without CustomerId.
-  Python trains isolated in-memory Popularity/ALS evaluators, writes atomic
+  Python trains isolated in-memory Popularity/ALS/Hybrid evaluators, writes atomic
   reports, and never activates or mutates the serving artifact. Evaluation has
   a separate timeout and does not participate in the inference circuit.
 

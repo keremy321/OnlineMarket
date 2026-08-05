@@ -38,6 +38,20 @@ public sealed class RecommendationModelEvaluationService(
             snapshot.CandidateProductIds
                 .OrderBy(productId => productId)
                 .ToArray(),
+            snapshot.Products
+                .OrderBy(product => product.ProductId)
+                .Select(product => new RecommendationModelProductRequest(
+                    product.ProductId,
+                    product.CategoryId,
+                    product.BrandId,
+                    product.Name,
+                    product.Description,
+                    product.UnitType.ToString(),
+                    product.NetContent,
+                    product.Price,
+                    product.IsActive,
+                    product.IsInStock))
+                .ToArray(),
             snapshot.Interactions
                 .OrderBy(interaction => interaction.SubjectId,
                     StringComparer.Ordinal)

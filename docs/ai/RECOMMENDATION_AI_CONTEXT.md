@@ -682,9 +682,11 @@ Activation process:
 6. Atomically update `current.json`.
 7. Keep the previous model for rollback.
 
-Artifact schema v2 stores the TF-IDF state plus an optional `implicit` ALS
-model, deterministic SubjectId/product mappings, and purchased-product index
-sets. The loader continues accepting schema-v1 TF-IDF-only joblib artifacts.
+Artifact schema v3 stores TF-IDF, optional `implicit` ALS, normalized
+popularity, sparse directional co-purchase/content neighbors, hybrid weights,
+deterministic SubjectId/product mappings, and purchased-product index sets. The
+loader continues accepting schema-v1 TF-IDF-only and schema-v2 TF-IDF/ALS
+joblib artifacts; old artifacts retain their prior inference strategies.
 Every temporary artifact is deserialized and dimension-validated before its
 atomic rename and in-memory activation.
 
@@ -713,7 +715,9 @@ usable training interactions, or candidate test labels are excluded with
 explicit aggregate reason counts. Previously purchased products are excluded
 from candidates when configured.
 
-The MVP evaluates Popularity and implicit ALS only. TF-IDF Similar Products and
+The MVP evaluates Popularity, implicit ALS, and Hybrid using the same split.
+It reports explicit Hybrid-minus-ALS precision, recall, hit-rate, NDCG, and
+coverage deltas without assuming Hybrid is superior. TF-IDF Similar Products and
 frequently-bought-together use different query/label protocols and therefore
 must be reported as `NotEvaluated` with explicit reasons rather than assigned
 fabricated personalized-ranking metrics. Evaluation trains isolated in-memory

@@ -14,11 +14,17 @@ public sealed class SqlServerModelEvaluationSnapshotStore(
         var products = await dbContext.ProductSnapshots
             .AsNoTracking()
             .OrderBy(product => product.ProductId)
-            .Select(product => new
-            {
+            .Select(product => new ModelProductTrainingSnapshot(
                 product.ProductId,
-                IsCandidate = product.IsActive && product.IsInStock
-            })
+                product.CategoryId,
+                product.BrandId,
+                product.Name,
+                product.Description,
+                product.UnitType,
+                product.NetContent,
+                product.Price,
+                product.IsActive,
+                product.IsInStock))
             .ToArrayAsync(cancellationToken);
         var items = await dbContext.OrderSnapshotItems
             .AsNoTracking()
@@ -59,9 +65,10 @@ public sealed class SqlServerModelEvaluationSnapshotStore(
                 group.Select(item => item.Item).ToArray()))
             .ToArray();
         return new ModelEvaluationSnapshot(
+            products,
             products.Select(product => product.ProductId).ToArray(),
             products
-                .Where(product => product.IsCandidate)
+                .Where(product => product.IsActive && product.IsInStock)
                 .Select(product => product.ProductId)
                 .ToArray(),
             interactions);

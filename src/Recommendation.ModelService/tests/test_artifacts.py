@@ -12,7 +12,7 @@ from conftest import SOURCE_ID
 from app.als import find_personalized
 from app.artifacts import ArtifactStore
 from app.contracts import ModelTrainingRequest
-from app.model import find_similar, train_model
+from app.model import find_similar, find_similar_with_strategy, train_model
 from app.service import RecommendationModelService
 
 
@@ -33,6 +33,7 @@ def test_artifact_round_trip(
     assert path.exists()
     assert loaded is not None
     assert loaded.metadata == model.metadata
+    assert loaded.hybrid == model.hybrid
     assert find_similar(loaded, SOURCE_ID, 10) == find_similar(model, SOURCE_ID, 10)
 
 
@@ -149,6 +150,7 @@ def test_legacy_tfidf_only_artifact_remains_loadable(
     value = model.to_artifact()
     value["artifactSchemaVersion"] = 1
     value.pop("als")
+    value.pop("hybrid")
     metadata = value["metadata"]
     assert isinstance(metadata, dict)
     for field in (
@@ -157,6 +159,7 @@ def test_legacy_tfidf_only_artifact_remains_loadable(
         "algorithmComponents",
         "components",
         "alsParameters",
+        "hybridParameters",
     ):
         metadata.pop(field)
     path = tmp_path / "model-20200101T000000000000Z-legacy.joblib"
@@ -166,7 +169,43 @@ def test_legacy_tfidf_only_artifact_remains_loadable(
 
     assert loaded is not None
     assert loaded.als is None
-    assert find_similar(loaded, SOURCE_ID, 10)
+    strategy, items = find_similar_with_strategy(loaded, SOURCE_ID, 10)
+    assert strategy == "PythonTfidf"
+    assert items
+
+
+def test_schema_v2_als_artifact_remains_loadable(
+    tmp_path: Path,
+    als_training_payload: dict[str, object],
+) -> None:
+    model = train_model(ModelTrainingRequest.model_validate(als_training_payload))
+    value = model.to_artifact()
+    value["artifactSchemaVersion"] = 2
+    value.pop("hybrid")
+    metadata = value["metadata"]
+    assert isinstance(metadata, dict)
+    metadata.pop("hybridParameters")
+    components = metadata["components"]
+    assert isinstance(components, dict)
+    for field in ("popularity", "association", "hybrid"):
+        components.pop(field)
+    metadata["algorithm"] = (
+        "tfidf-product-content-cosine-v1+implicit-als-v1"
+    )
+    metadata["algorithmComponents"] = [
+        "tfidf-product-content-cosine-v1",
+        "implicit-als-v1",
+    ]
+    joblib.dump(value, tmp_path / "model-20200101T000000000001Z-v2.joblib")
+
+    loaded = ArtifactStore(tmp_path).load_latest_valid()
+
+    assert loaded is not None
+    assert loaded.als is not None
+    assert loaded.hybrid is None
+    strategy, items = find_similar_with_strategy(loaded, SOURCE_ID, 10)
+    assert strategy == "PythonTfidf"
+    assert items
 
 
 def test_corrupted_als_component_falls_back_to_previous_valid_artifact(
@@ -219,10 +258,40 @@ def test_failed_als_training_preserves_previous_active_model(
     assert service.current().modelVersion == previous.modelVersion
 
 
+def test_failed_hybrid_build_preserves_previous_active_model(
+    tmp_path: Path,
+    als_training_payload: dict[str, object],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = RecommendationModelService(ArtifactStore(tmp_path))
+    request = ModelTrainingRequest.model_validate(als_training_payload)
+    previous = service.train(request)
+
+    def fail_hybrid(*_: object, **__: object) -> object:
+        raise RuntimeError("injected hybrid failure")
+
+    monkeypatch.setattr("app.model.build_hybrid_component", fail_hybrid)
+    replacement_payload = deepcopy(als_training_payload)
+    replacement_payload["modelVersion"] = "model-set-test-v2"
+
+    with pytest.raises(RuntimeError, match="injected hybrid failure"):
+        service.train(ModelTrainingRequest.model_validate(replacement_payload))
+
+    assert service.current().modelVersion == previous.modelVersion
+
+
 def test_artifact_contains_no_direct_customer_identifier_field(
     als_training_payload: dict[str, object],
 ) -> None:
     request = ModelTrainingRequest.model_validate(als_training_payload)
     artifact = train_model(request).to_artifact()
 
-    assert "customerid" not in repr(artifact).lower()
+    serialized = repr(artifact).lower()
+    for forbidden in (
+        "customerid",
+        "apikey",
+        "api_key",
+        "derivationkey",
+        "connectionstring",
+    ):
+        assert forbidden not in serialized

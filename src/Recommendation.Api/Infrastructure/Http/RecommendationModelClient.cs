@@ -254,7 +254,13 @@ public sealed class RecommendationModelClient(
             && response.Metadata.Components is not null
             && IsValidComponentStatus(response.Metadata.Components.Tfidf)
             && IsValidComponentStatus(response.Metadata.Components.Als)
+            && IsValidComponentStatus(response.Metadata.Components.Popularity)
+            && IsValidComponentStatus(response.Metadata.Components.Association)
+            && IsValidComponentStatus(response.Metadata.Components.Hybrid)
             && response.Metadata.Components.Tfidf.Status == "Succeeded"
+            && response.Metadata.Components.Popularity!.Status == "Succeeded"
+            && response.Metadata.Components.Association!.Status == "Succeeded"
+            && response.Metadata.Components.Hybrid!.Status == "Succeeded"
             && response.Metadata.AlsParameters is
             {
                 Factors: > 0,
@@ -263,6 +269,7 @@ public sealed class RecommendationModelClient(
                 Alpha: > 0m,
                 RandomSeed: >= 0
             }
+            && IsValidHybridParameters(response.Metadata.HybridParameters)
             && response.Metadata.LibraryVersions is not null;
     }
 
@@ -271,6 +278,7 @@ public sealed class RecommendationModelClient(
         RecommendationModelSimilarClientResponse response)
     {
         if (string.IsNullOrWhiteSpace(response.ModelVersion)
+            || response.Strategy is not ("PythonTfidf" or "HybridSimilar")
             || response.SourceProductId != request.ProductId
             || response.Items is null
             || response.Items.Count > request.Limit)
@@ -286,20 +294,25 @@ public sealed class RecommendationModelClient(
             if (item.ProductId == Guid.Empty
                 || item.ProductId == request.ProductId
                 || item.TfidfScore is < 0m or > 1m
+                || item.CoPurchaseScore is < 0m or > 1m
+                || item.PopularityScore is < 0m or > 1m
+                || item.FinalScore is < 0m or > 1m
+                || string.IsNullOrWhiteSpace(item.ReasonCode)
+                || string.IsNullOrWhiteSpace(item.ReasonText)
                 || !productIds.Add(item.ProductId))
             {
                 return false;
             }
 
             if (previousScore.HasValue
-                && (item.TfidfScore > previousScore.Value
-                    || item.TfidfScore == previousScore.Value
+                && (item.FinalScore > previousScore.Value
+                    || item.FinalScore == previousScore.Value
                     && item.ProductId.CompareTo(previousProductId!.Value) < 0))
             {
                 return false;
             }
 
-            previousScore = item.TfidfScore;
+            previousScore = item.FinalScore;
             previousProductId = item.ProductId;
         }
 
@@ -312,7 +325,8 @@ public sealed class RecommendationModelClient(
     {
         if (string.IsNullOrWhiteSpace(response.ModelVersion)
             || response.Strategy is not (
-                "implicit_als" or "cold_start_unavailable")
+                "implicit_als" or "HybridPersonalized"
+                or "cold_start_unavailable")
             || response.Recommendations is null
             || response.Recommendations.Count > request.Limit
             || response.Strategy == "cold_start_unavailable"
@@ -329,6 +343,17 @@ public sealed class RecommendationModelClient(
             if (item.ProductId == Guid.Empty
                 || item.Score is < 0m or > 1m
                 || item.Confidence is < 0m or > 1m
+                || !IsOptionalUnitScore(item.AlsScore)
+                || !IsOptionalUnitScore(item.ContentAffinityScore)
+                || !IsOptionalUnitScore(item.AssociationScore)
+                || !IsOptionalUnitScore(item.PopularityScore)
+                || !IsOptionalUnitScore(item.FinalScore)
+                || response.Strategy == "HybridPersonalized"
+                    && (item.AlsScore is null
+                        || item.ContentAffinityScore is null
+                        || item.AssociationScore is null
+                        || item.PopularityScore is null
+                        || item.FinalScore != item.Score)
                 || string.IsNullOrWhiteSpace(item.ReasonCode)
                 || string.IsNullOrWhiteSpace(item.ReasonText)
                 || !productIds.Add(item.ProductId))
@@ -413,6 +438,14 @@ public sealed class RecommendationModelClient(
             || !IsValidEvaluationModel(
                 response.Models.Als,
                 requireAlsParameters: true)
+            || !IsValidEvaluationModel(
+                response.Models.Hybrid,
+                requireAlsParameters: true,
+                requireHybridParameters: true)
+            || !IsValidComparison(
+                response.Models.Als,
+                response.Models.Hybrid,
+                response.Comparison)
             || !IsExplicitlyNotEvaluated(response.Models.Tfidf)
             || !IsExplicitlyNotEvaluated(response.Models.Fbt))
         {
@@ -424,7 +457,8 @@ public sealed class RecommendationModelClient(
 
     private static bool IsValidEvaluationModel(
         RecommendationModelEvaluationModelResponse? model,
-        bool requireAlsParameters)
+        bool requireAlsParameters,
+        bool requireHybridParameters = false)
     {
         if (model is null)
         {
@@ -447,15 +481,61 @@ public sealed class RecommendationModelClient(
             return false;
         }
 
-        return !requireAlsParameters
-            || model.Parameters is
+        return (!requireAlsParameters
+                || model.Parameters is
             {
                 Factors: > 0,
                 Regularization: > 0m,
                 Iterations: > 0,
                 Alpha: > 0m,
                 RandomSeed: >= 0
-            };
+            })
+            && (!requireHybridParameters
+                || IsValidHybridParameters(model.Parameters.Hybrid));
+    }
+
+    private static bool IsValidComparison(
+        RecommendationModelEvaluationModelResponse als,
+        RecommendationModelEvaluationModelResponse hybrid,
+        RecommendationModelEvaluationComparisonResponse? comparison)
+    {
+        if (als.Metrics is null || hybrid.Metrics is null)
+        {
+            return als.Metrics is null
+                && hybrid.Metrics is null
+                && comparison is null;
+        }
+
+        return comparison is not null
+            && IsValidDelta(
+                comparison.HybridMinusAlsPrecisionAt5,
+                hybrid.Metrics.PrecisionAtK,
+                als.Metrics.PrecisionAtK)
+            && IsValidDelta(
+                comparison.HybridMinusAlsRecallAt5,
+                hybrid.Metrics.RecallAtK,
+                als.Metrics.RecallAtK)
+            && IsValidDelta(
+                comparison.HybridMinusAlsHitRateAt5,
+                hybrid.Metrics.HitRateAtK,
+                als.Metrics.HitRateAtK)
+            && IsValidDelta(
+                comparison.HybridMinusAlsNdcgAt5,
+                hybrid.Metrics.NdcgAtK,
+                als.Metrics.NdcgAtK)
+            && IsValidDelta(
+                comparison.HybridMinusAlsCoverage,
+                hybrid.Metrics.CatalogueCoverage,
+                als.Metrics.CatalogueCoverage);
+    }
+
+    private static bool IsValidDelta(
+        decimal actual,
+        decimal hybrid,
+        decimal als)
+    {
+        const decimal comparisonTolerance = 0.000000000001m;
+        return Math.Abs(actual - (hybrid - als)) <= comparisonTolerance;
     }
 
     private static bool IsValidEvaluationMetrics(
@@ -492,6 +572,46 @@ public sealed class RecommendationModelClient(
     private static bool IsUnitScore(decimal value)
     {
         return value is >= 0m and <= 1m;
+    }
+
+    private static bool IsOptionalUnitScore(decimal? value)
+    {
+        return value is null or >= 0m and <= 1m;
+    }
+
+    private static bool IsValidHybridParameters(
+        RecommendationModelHybridParametersResponse? parameters)
+    {
+        if (parameters is null
+            || parameters.CandidatePoolMultiplier <= 0
+            || parameters.CandidatePoolCap <= 0
+            || parameters.ContentAffinityAggregation != "maximum_similarity"
+            || parameters.MissingComponentPolicy
+                != "fallback_to_als_without_renormalization")
+        {
+            return false;
+        }
+
+        var personalized = parameters.PersonalizedWeights;
+        var similar = parameters.SimilarWeights;
+        return IsUnitScore(personalized.Als)
+            && IsUnitScore(personalized.ContentAffinity)
+            && IsUnitScore(personalized.Association)
+            && IsUnitScore(personalized.Popularity)
+            && Math.Abs(
+                personalized.Als
+                + personalized.ContentAffinity
+                + personalized.Association
+                + personalized.Popularity
+                - 1m) <= 0.000000001m
+            && IsUnitScore(similar.ContentSimilarity)
+            && IsUnitScore(similar.CoPurchaseSimilarity)
+            && IsUnitScore(similar.Popularity)
+            && Math.Abs(
+                similar.ContentSimilarity
+                + similar.CoPurchaseSimilarity
+                + similar.Popularity
+                - 1m) <= 0.000000001m;
     }
 
     private static bool IsSha256(string value)

@@ -164,10 +164,91 @@ public sealed class RecommendationModelClientTests
             "\"excludePreviouslyPurchased\":true",
             requestJson,
             StringComparison.Ordinal);
+        Assert.Contains(
+            "\"strategy\":\"Als\"",
+            requestJson,
+            StringComparison.Ordinal);
         Assert.DoesNotContain(
             "customerId",
             requestJson,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Hybrid_personalized_response_maps_component_diagnostics()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            modelVersion = "model-v3",
+            strategy = "HybridPersonalized",
+            recommendations = new[]
+            {
+                new
+                {
+                    productId = CandidateOneId,
+                    score = 0.8m,
+                    confidence = (decimal?)null,
+                    reasonCode = "Hybrid.AlsDominant",
+                    reasonText = "Implicit affinity is strongest.",
+                    alsScore = 1m,
+                    contentAffinityScore = 0.5m,
+                    associationScore = 0.2m,
+                    popularityScore = 0.1m,
+                    finalScore = 0.8m
+                }
+            }
+        });
+        var client = CreateClient(new DelegateHandler(_ => JsonResponse(json)));
+
+        var result = await client.GetPersonalizedAsync(
+            new RecommendationModelPersonalizedRequest(
+                $"v1.{new string('A', 43)}",
+                2,
+                true,
+                "Hybrid"));
+
+        Assert.Equal(RecommendationModelClientOutcome.Succeeded, result.Outcome);
+        var item = Assert.Single(result.Value!.Recommendations);
+        Assert.Equal(1m, item.AlsScore);
+        Assert.Equal(0.5m, item.ContentAffinityScore);
+        Assert.Equal(item.Score, item.FinalScore);
+    }
+
+    [Fact]
+    public async Task Hybrid_personalized_response_requires_all_diagnostics()
+    {
+        var json = JsonSerializer.Serialize(new
+        {
+            modelVersion = "model-v3",
+            strategy = "HybridPersonalized",
+            recommendations = new[]
+            {
+                new
+                {
+                    productId = CandidateOneId,
+                    score = 0.8m,
+                    confidence = (decimal?)null,
+                    reasonCode = "Hybrid.AlsDominant",
+                    reasonText = "Implicit affinity is strongest.",
+                    alsScore = 1m,
+                    contentAffinityScore = 0.5m,
+                    associationScore = 0.2m,
+                    finalScore = 0.8m
+                }
+            }
+        });
+        var client = CreateClient(new DelegateHandler(_ => JsonResponse(json)));
+
+        var result = await client.GetPersonalizedAsync(
+            new RecommendationModelPersonalizedRequest(
+                $"v1.{new string('A', 43)}",
+                2,
+                true,
+                "Hybrid"));
+
+        Assert.Equal(
+            RecommendationModelClientOutcome.InvalidResponse,
+            result.Outcome);
     }
 
     [Theory]
@@ -261,6 +342,44 @@ public sealed class RecommendationModelClientTests
             "customerId",
             body,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Evaluation_comparison_allows_only_float_boundary_tolerance()
+    {
+        var response = RecommendationModelEvaluationTestData.Response();
+        var tolerated = response with
+        {
+            Comparison = response.Comparison! with
+            {
+                HybridMinusAlsPrecisionAt5 = 0.0000000000005m
+            }
+        };
+        var rejected = response with
+        {
+            Comparison = response.Comparison! with
+            {
+                HybridMinusAlsPrecisionAt5 = 0.00000000001m
+            }
+        };
+        var validClient = CreateClient(new DelegateHandler(_ => JsonResponse(
+            JsonSerializer.Serialize(
+                tolerated,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)))));
+        var invalidClient = CreateClient(new DelegateHandler(_ => JsonResponse(
+            JsonSerializer.Serialize(
+                rejected,
+                new JsonSerializerOptions(JsonSerializerDefaults.Web)))));
+
+        var valid = await validClient.EvaluateAsync(
+            RecommendationModelEvaluationTestData.Request());
+        var invalid = await invalidClient.EvaluateAsync(
+            RecommendationModelEvaluationTestData.Request());
+
+        Assert.Equal(RecommendationModelClientOutcome.Succeeded, valid.Outcome);
+        Assert.Equal(
+            RecommendationModelClientOutcome.InvalidResponse,
+            invalid.Outcome);
     }
 
     [Theory]
@@ -425,11 +544,30 @@ public sealed class RecommendationModelClientTests
         return JsonSerializer.Serialize(new
         {
             modelVersion = "tfidf-test-v1",
+            strategy = "PythonTfidf",
             sourceProductId = SourceId,
             items = new[]
             {
-                new { productId = CandidateOneId, tfidfScore = 0.90m },
-                new { productId = CandidateTwoId, tfidfScore = 0.50m }
+                new
+                {
+                    productId = CandidateOneId,
+                    tfidfScore = 0.90m,
+                    coPurchaseScore = 0m,
+                    popularityScore = 0m,
+                    finalScore = 0.90m,
+                    reasonCode = "Similarity.TfidfContent",
+                    reasonText = "Content similarity."
+                },
+                new
+                {
+                    productId = CandidateTwoId,
+                    tfidfScore = 0.50m,
+                    coPurchaseScore = 0m,
+                    popularityScore = 0m,
+                    finalScore = 0.50m,
+                    reasonCode = "Similarity.TfidfContent",
+                    reasonText = "Content similarity."
+                }
             }
         });
     }

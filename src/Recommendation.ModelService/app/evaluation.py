@@ -13,8 +13,9 @@ from time import perf_counter_ns
 from uuid import UUID
 
 from .als import find_personalized, train_als_component
-from .config import AlsSettings, EvaluationSettings
+from .config import AlsSettings, EvaluationSettings, HybridSettings
 from .contracts import (
+    EvaluationComparison,
     EvaluationDatasetCounts,
     EvaluationExcludedDataCounts,
     EvaluationModelMetrics,
@@ -25,9 +26,12 @@ from .contracts import (
     EvaluationSplitSummary,
     ModelEvaluationRequest,
     ModelEvaluationResponse,
+    ModelTrainingRequest,
     OrderInteractionItem,
     OrderProductInteraction,
 )
+from .hybrid import find_hybrid_personalized
+from .model import hybrid_parameters, train_model
 
 _SPLIT_STRATEGY = "per_subject_chronological_newest_order_holdout"
 _WEIGHT_DESCRIPTION = (
@@ -123,10 +127,12 @@ def evaluate_request(
     request: ModelEvaluationRequest,
     *,
     als_settings: AlsSettings,
+    hybrid_settings: HybridSettings,
     evaluation_settings: EvaluationSettings,
     evaluated_at_utc: datetime | None = None,
 ) -> ModelEvaluationResponse:
     als_settings.validate()
+    hybrid_settings.validate()
     evaluation_settings.validate()
     evaluated_at = evaluated_at_utc or datetime.now(UTC)
     if evaluated_at.tzinfo is None or evaluated_at.utcoffset() is None:
@@ -140,7 +146,11 @@ def evaluate_request(
         sorted(request.candidateProductIds, key=lambda product_id: product_id.hex)
     )
     split = build_temporal_split(request, evaluation_settings)
-    input_hash = calculate_evaluation_input_hash(request, evaluation_settings)
+    input_hash = calculate_evaluation_input_hash(
+        request,
+        evaluation_settings,
+        hybrid_settings,
+    )
     training_interaction_count = sum(
         len(order.items) for order in split.training_orders
     )
@@ -165,6 +175,17 @@ def evaluate_request(
         training_interaction_count,
         test_interaction_count,
     )
+    hybrid_result = _evaluate_hybrid(
+        request,
+        split,
+        popularity_rankings,
+        als_settings,
+        hybrid_settings,
+        evaluation_settings,
+        training_interaction_count,
+        test_interaction_count,
+    )
+    comparison = _comparison(als_result, hybrid_result)
     json_name = f"evaluation-{request.evaluationVersion}.json"
     markdown_name = f"evaluation-{request.evaluationVersion}.md"
     response = ModelEvaluationResponse(
@@ -232,6 +253,7 @@ def evaluate_request(
         models=EvaluationModels(
             popularity=popularity_result,
             als=als_result,
+            hybrid=hybrid_result,
             tfidf=_not_evaluated(
                 "TF-IDF Similar requires a separate item-to-item relevance protocol."
             ),
@@ -239,6 +261,7 @@ def evaluate_request(
                 "FBT requires a separate deterministic basket-item holdout protocol."
             ),
         ),
+        comparison=comparison,
         reportIdentifier=request.evaluationVersion,
         reports=EvaluationReportFiles(
             jsonFile=json_name,
@@ -257,7 +280,11 @@ def evaluate_request(
                 "TF-IDF Similar and FBT are not evaluated without model-appropriate "
                 "protocols."
             ),
-            "No recency weighting or hybrid ranking is applied in this evaluation.",
+            "No recency weighting is applied in this evaluation.",
+            (
+                "Hybrid weights are fixed configuration inputs and were not tuned "
+                "against this holdout."
+            ),
         ],
     )
     return response
@@ -370,6 +397,7 @@ def build_temporal_split(
 def calculate_evaluation_input_hash(
     request: ModelEvaluationRequest,
     settings: EvaluationSettings,
+    hybrid_settings: HybridSettings,
 ) -> str:
     interactions = []
     for interaction in sorted(
@@ -398,6 +426,13 @@ def calculate_evaluation_input_hash(
             }
         )
     canonical = {
+        "products": sorted(
+            (
+                product.model_dump(mode="json")
+                for product in request.products
+            ),
+            key=lambda item: str(item["productId"]),
+        ),
         "catalogueProductIds": sorted(
             str(product_id) for product_id in request.catalogueProductIds
         ),
@@ -414,6 +449,7 @@ def calculate_evaluation_input_hash(
             "excludePreviouslyPurchased": settings.exclude_previously_purchased,
             "randomSeed": settings.random_seed,
             "maximumSubjects": settings.maximum_subjects,
+            "hybrid": hybrid_parameters(hybrid_settings).model_dump(mode="json"),
         },
     }
     encoded = json.dumps(
@@ -508,6 +544,7 @@ def render_markdown_report(response: ModelEvaluationResponse) -> str:
     for name, result in (
         ("Popularity", response.models.popularity),
         ("ALS", response.models.als),
+        ("Hybrid", response.models.hybrid),
         ("TF-IDF Similar", response.models.tfidf),
         ("FBT", response.models.fbt),
     ):
@@ -527,6 +564,7 @@ def render_markdown_report(response: ModelEvaluationResponse) -> str:
             f"{metrics.averageInferenceLatencyMilliseconds!r} | "
             f"{metrics.p95InferenceLatencyMilliseconds!r} |"
         )
+    _append_hybrid_report_sections(lines, response)
     lines.extend(
         [
             "",
@@ -589,6 +627,67 @@ def render_markdown_report(response: ModelEvaluationResponse) -> str:
     )
     lines.extend(f"- {limitation}" for limitation in response.limitations)
     return "\n".join(lines)
+
+
+def _append_hybrid_report_sections(
+    lines: list[str],
+    response: ModelEvaluationResponse,
+) -> None:
+    if response.models.hybrid.parameters is not None:
+        hybrid = response.models.hybrid.parameters.hybrid
+        if hybrid is not None:
+            lines.extend(
+                [
+                    "",
+                    "## Hybrid parameters",
+                    "",
+                    (
+                        "- Personalized weights (ALS/content/association/"
+                        f"popularity): {hybrid.personalizedWeights.als!r} / "
+                        f"{hybrid.personalizedWeights.contentAffinity!r} / "
+                        f"{hybrid.personalizedWeights.association!r} / "
+                        f"{hybrid.personalizedWeights.popularity!r}"
+                    ),
+                    (
+                        "- Similar weights (content/co-purchase/popularity): "
+                        f"{hybrid.similarWeights.contentSimilarity!r} / "
+                        f"{hybrid.similarWeights.coPurchaseSimilarity!r} / "
+                        f"{hybrid.similarWeights.popularity!r}"
+                    ),
+                    (
+                        "- Candidate pool multiplier/cap: "
+                        f"{hybrid.candidatePoolMultiplier} / "
+                        f"{hybrid.candidatePoolCap}"
+                    ),
+                    (
+                        "- Content affinity aggregation: "
+                        f"`{hybrid.contentAffinityAggregation}`"
+                    ),
+                    (
+                        "- Missing-component policy: "
+                        f"`{hybrid.missingComponentPolicy}`"
+                    ),
+                ]
+            )
+    if response.comparison is not None:
+        comparison = response.comparison
+        lines.extend(
+            [
+                "",
+                "## Hybrid minus ALS",
+                "",
+                "| Metric | Delta |",
+                "|---|---:|",
+                (
+                    "| Precision@5 | "
+                    f"{comparison.hybridMinusAlsPrecisionAt5!r} |"
+                ),
+                f"| Recall@5 | {comparison.hybridMinusAlsRecallAt5!r} |",
+                f"| HitRate@5 | {comparison.hybridMinusAlsHitRateAt5!r} |",
+                f"| NDCG@5 | {comparison.hybridMinusAlsNdcgAt5!r} |",
+                f"| Catalogue coverage | {comparison.hybridMinusAlsCoverage!r} |",
+            ]
+        )
 
 
 def _evaluate_popularity(
@@ -691,6 +790,7 @@ def _evaluate_als(
             items=list(order.items),
         )
         for order in split.training_orders
+        if order.items
     ]
     started = perf_counter_ns()
     component, _ = train_als_component(
@@ -756,6 +856,134 @@ def _evaluate_als(
             parameters=parameters,
         ),
         fallback_subject_count,
+    )
+
+
+def _evaluate_hybrid(
+    request: ModelEvaluationRequest,
+    split: TemporalSplit,
+    popularity_rankings: dict[str, tuple[UUID, ...]],
+    als_settings: AlsSettings,
+    hybrid_settings: HybridSettings,
+    evaluation_settings: EvaluationSettings,
+    training_interaction_count: int,
+    test_interaction_count: int,
+) -> EvaluationModelResult:
+    parameters = EvaluationModelParameters(
+        interactionWeighting=_WEIGHT_DESCRIPTION,
+        excludePreviouslyPurchased=(
+            evaluation_settings.exclude_previously_purchased
+        ),
+        factors=als_settings.factors,
+        regularization=als_settings.regularization,
+        iterations=als_settings.iterations,
+        alpha=als_settings.alpha,
+        randomSeed=evaluation_settings.random_seed,
+        hybrid=hybrid_parameters(hybrid_settings),
+    )
+    if not split.eligible_subject_ids:
+        return EvaluationModelResult(
+            status="NotEvaluated",
+            reason="No subjects have usable chronological training and test data.",
+            parameters=parameters,
+        )
+    training_interactions = [
+        OrderProductInteraction(
+            orderId=order.order_id,
+            subjectId=order.subject_id,
+            items=list(order.items),
+        )
+        for order in split.training_orders
+        if order.items
+    ]
+    evaluation_als_settings = replace(
+        als_settings,
+        random_seed=evaluation_settings.random_seed,
+    )
+    started = perf_counter_ns()
+    model = train_model(
+        ModelTrainingRequest(
+            modelVersion="offline-hybrid-evaluation",
+            correlationId=UUID(int=1),
+            products=request.products,
+            interactions=training_interactions,
+        ),
+        als_settings=evaluation_als_settings,
+        hybrid_settings=hybrid_settings,
+        trained_at_utc=datetime(2000, 1, 1, tzinfo=UTC),
+    )
+    training_duration = _elapsed_milliseconds(started)
+    if model.als is None or model.hybrid is None:
+        return EvaluationModelResult(
+            status="NotEvaluated",
+            reason="The chronological training split is insufficient for Hybrid.",
+            parameters=parameters,
+        )
+    rankings: dict[str, tuple[UUID, ...]] = {}
+    known_rankings: dict[str, tuple[UUID, ...]] = {}
+    latencies: list[float] = []
+    fallback_subject_count = 0
+    for subject_id in split.eligible_subject_ids:
+        inference_started = perf_counter_ns()
+        recommendations = find_hybrid_personalized(
+            model.hybrid,
+            model.als,
+            subject_id,
+            model.availability,
+            evaluation_settings.k,
+            exclude_previously_purchased=(
+                evaluation_settings.exclude_previously_purchased
+            ),
+        )
+        primary = tuple(item.productId for item in recommendations or [])
+        known_rankings[subject_id] = primary
+        if primary:
+            rankings[subject_id] = primary
+        else:
+            rankings[subject_id] = popularity_rankings.get(subject_id, ())
+            fallback_subject_count += 1
+        latencies.append(_elapsed_milliseconds(inference_started))
+    metrics = _build_metrics(
+        rankings,
+        split.relevant_products,
+        candidate_count=len(request.candidateProductIds),
+        known_rankings=known_rankings,
+        k=evaluation_settings.k,
+        training_interaction_count=training_interaction_count,
+        test_interaction_count=test_interaction_count,
+        training_duration=training_duration,
+        latencies=latencies,
+        fallback_subject_count=fallback_subject_count,
+    )
+    return EvaluationModelResult(
+        status="Evaluated",
+        metrics=metrics,
+        parameters=parameters,
+    )
+
+
+def _comparison(
+    als: EvaluationModelResult,
+    hybrid: EvaluationModelResult,
+) -> EvaluationComparison | None:
+    if als.metrics is None or hybrid.metrics is None:
+        return None
+    return EvaluationComparison(
+        hybridMinusAlsPrecisionAt5=(
+            hybrid.metrics.precisionAtK - als.metrics.precisionAtK
+        ),
+        hybridMinusAlsRecallAt5=(
+            hybrid.metrics.recallAtK - als.metrics.recallAtK
+        ),
+        hybridMinusAlsHitRateAt5=(
+            hybrid.metrics.hitRateAtK - als.metrics.hitRateAtK
+        ),
+        hybridMinusAlsNdcgAt5=(
+            hybrid.metrics.ndcgAtK - als.metrics.ndcgAtK
+        ),
+        hybridMinusAlsCoverage=(
+            hybrid.metrics.catalogueCoverage - als.metrics.catalogueCoverage
+        ),
     )
 
 

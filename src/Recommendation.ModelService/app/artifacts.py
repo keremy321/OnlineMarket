@@ -8,14 +8,22 @@ from typing import Any
 from uuid import UUID
 
 import joblib
+import numpy as np
 from implicit.cpu.als import AlternatingLeastSquares
 from pydantic import TypeAdapter, ValidationError
 from scipy.sparse import csr_matrix
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from .als import TrainedAlsComponent
-from .contracts import ArtifactMetadata, SubjectId
+from .config import (
+    HybridSettings,
+    PersonalizedHybridWeights,
+    SimilarHybridWeights,
+)
+from .contracts import ArtifactMetadata, HybridParameters, SubjectId
+from .hybrid import ScoredProductIndex, TrainedHybridComponent
 from .model import (
+    ALS_ARTIFACT_SCHEMA_VERSION,
     ARTIFACT_SCHEMA_VERSION,
     LEGACY_ARTIFACT_SCHEMA_VERSION,
     TrainedModel,
@@ -81,6 +89,7 @@ class ArtifactStore:
         schema_version = value.get("artifactSchemaVersion")
         if schema_version not in (
             LEGACY_ARTIFACT_SCHEMA_VERSION,
+            ALS_ARTIFACT_SCHEMA_VERSION,
             ARTIFACT_SCHEMA_VERSION,
         ):
             raise ValueError("Artifact schema version is unsupported.")
@@ -109,12 +118,24 @@ class ArtifactStore:
             if schema_version == LEGACY_ARTIFACT_SCHEMA_VERSION
             else ArtifactStore._read_als(value.get("als"), product_ids)
         )
+        hybrid = (
+            ArtifactStore._read_hybrid(value.get("hybrid"), product_ids, metadata)
+            if schema_version == ARTIFACT_SCHEMA_VERSION
+            else None
+        )
         if (
             metadata.components is not None
             and metadata.components.als.status == "Succeeded"
             and als is None
         ):
             raise ValueError("Artifact ALS component is missing.")
+        if (
+            metadata.components is not None
+            and metadata.components.hybrid is not None
+            and metadata.components.hybrid.status == "Succeeded"
+            and hybrid is None
+        ):
+            raise ValueError("Artifact hybrid component is missing.")
         return TrainedModel(
             metadata=metadata,
             vectorizer=vectorizer,
@@ -122,6 +143,7 @@ class ArtifactStore:
             product_ids=product_ids,
             availability=tuple(availability),
             als=als,
+            hybrid=hybrid,
         )
 
     @staticmethod
@@ -157,6 +179,8 @@ class ArtifactStore:
             or len(raw_purchased) != len(subject_ids)
             or model.user_factors.shape[0] != len(subject_ids)
             or model.item_factors.shape[0] != len(product_ids)
+            or not np.isfinite(model.user_factors).all()
+            or not np.isfinite(model.item_factors).all()
         ):
             raise ValueError("Artifact ALS dimensions are inconsistent.")
         purchased: list[frozenset[int]] = []
@@ -180,3 +204,119 @@ class ArtifactStore:
             product_ids=product_ids,
             purchased_product_indices=tuple(purchased),
         )
+
+    @staticmethod
+    def _read_hybrid(
+        value: Any,
+        product_ids: tuple[UUID, ...],
+        metadata: ArtifactMetadata,
+    ) -> TrainedHybridComponent | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict) or set(value) != {
+            "popularityScores",
+            "associationNeighbors",
+            "contentNeighbors",
+            "settings",
+        }:
+            raise ValueError("Artifact hybrid root is invalid.")
+        parameters = HybridParameters.model_validate(value["settings"])
+        if (
+            parameters.contentAffinityAggregation != "maximum_similarity"
+            or parameters.missingComponentPolicy
+            != "fallback_to_als_without_renormalization"
+        ):
+            raise ValueError("Artifact hybrid policies are unsupported.")
+        settings = HybridSettings(
+            personalized=PersonalizedHybridWeights(
+                als=parameters.personalizedWeights.als,
+                content=parameters.personalizedWeights.contentAffinity,
+                association=parameters.personalizedWeights.association,
+                popularity=parameters.personalizedWeights.popularity,
+            ),
+            similar=SimilarHybridWeights(
+                content=parameters.similarWeights.contentSimilarity,
+                association=parameters.similarWeights.coPurchaseSimilarity,
+                popularity=parameters.similarWeights.popularity,
+            ),
+            candidate_pool_multiplier=parameters.candidatePoolMultiplier,
+            candidate_pool_cap=parameters.candidatePoolCap,
+        )
+        settings.validate()
+        if metadata.hybridParameters != parameters:
+            raise ValueError("Artifact hybrid metadata is inconsistent.")
+        raw_popularity = value["popularityScores"]
+        if (
+            not isinstance(raw_popularity, list)
+            or len(raw_popularity) != len(product_ids)
+            or any(
+                not isinstance(score, int | float)
+                or isinstance(score, bool)
+                or not np.isfinite(score)
+                or not 0.0 <= float(score) <= 1.0
+                for score in raw_popularity
+            )
+        ):
+            raise ValueError("Artifact hybrid popularity state is invalid.")
+        association = ArtifactStore._read_neighbors(
+            value["associationNeighbors"],
+            len(product_ids),
+            settings.candidate_pool_cap,
+        )
+        content = ArtifactStore._read_neighbors(
+            value["contentNeighbors"],
+            len(product_ids),
+            settings.candidate_pool_cap,
+        )
+        return TrainedHybridComponent(
+            popularity_scores=tuple(float(score) for score in raw_popularity),
+            association_neighbors=association,
+            content_neighbors=content,
+            settings=settings,
+        )
+
+    @staticmethod
+    def _read_neighbors(
+        value: Any,
+        product_count: int,
+        cap: int,
+    ) -> tuple[tuple[ScoredProductIndex, ...], ...]:
+        if not isinstance(value, list) or len(value) != product_count:
+            raise ValueError("Artifact hybrid neighbor dimensions are invalid.")
+        result: list[tuple[ScoredProductIndex, ...]] = []
+        for source_index, raw_row in enumerate(value):
+            if not isinstance(raw_row, list) or len(raw_row) > cap:
+                raise ValueError("Artifact hybrid neighbor row is invalid.")
+            row: list[ScoredProductIndex] = []
+            for raw_item in raw_row:
+                if (
+                    not isinstance(raw_item, dict)
+                    or set(raw_item) != {"productIndex", "score"}
+                    or not isinstance(raw_item["productIndex"], int)
+                    or isinstance(raw_item["productIndex"], bool)
+                    or raw_item["productIndex"] < 0
+                    or raw_item["productIndex"] >= product_count
+                    or raw_item["productIndex"] == source_index
+                    or not isinstance(raw_item["score"], int | float)
+                    or isinstance(raw_item["score"], bool)
+                    or not np.isfinite(raw_item["score"])
+                    or not 0.0 < float(raw_item["score"]) <= 1.0
+                ):
+                    raise ValueError("Artifact hybrid neighbor item is invalid.")
+                row.append(
+                    ScoredProductIndex(
+                        raw_item["productIndex"],
+                        float(raw_item["score"]),
+                    )
+                )
+            if (
+                len({item.product_index for item in row}) != len(row)
+                or row
+                != sorted(
+                    row,
+                    key=lambda item: (-item.score, item.product_index),
+                )
+            ):
+                raise ValueError("Artifact hybrid neighbor ordering is invalid.")
+            result.append(tuple(row))
+        return tuple(result)

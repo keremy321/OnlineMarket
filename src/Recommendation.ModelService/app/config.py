@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -76,6 +77,98 @@ class AlsSettings:
             raise ValueError("ALS minimum interactions must be at least 2.")
 
 
+_WEIGHT_TOLERANCE = 1e-9
+
+
+@dataclass(frozen=True, slots=True)
+class PersonalizedHybridWeights:
+    als: float = 0.50
+    content: float = 0.20
+    association: float = 0.15
+    popularity: float = 0.15
+
+    def validate(self) -> None:
+        _validate_weights(
+            (self.als, self.content, self.association, self.popularity),
+            "Personalized hybrid",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class SimilarHybridWeights:
+    content: float = 0.70
+    association: float = 0.20
+    popularity: float = 0.10
+
+    def validate(self) -> None:
+        _validate_weights(
+            (self.content, self.association, self.popularity),
+            "Similar hybrid",
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class HybridSettings:
+    personalized: PersonalizedHybridWeights = field(
+        default_factory=PersonalizedHybridWeights
+    )
+    similar: SimilarHybridWeights = field(default_factory=SimilarHybridWeights)
+    candidate_pool_multiplier: int = 10
+    candidate_pool_cap: int = 500
+
+    @classmethod
+    def from_environment(cls) -> HybridSettings:
+        return cls(
+            personalized=PersonalizedHybridWeights(
+                als=_number("RECOMMENDATION_HYBRID_PERSONALIZED_ALS_WEIGHT", 0.50),
+                content=_number(
+                    "RECOMMENDATION_HYBRID_PERSONALIZED_CONTENT_WEIGHT",
+                    0.20,
+                ),
+                association=_number(
+                    "RECOMMENDATION_HYBRID_PERSONALIZED_ASSOCIATION_WEIGHT",
+                    0.15,
+                ),
+                popularity=_number(
+                    "RECOMMENDATION_HYBRID_PERSONALIZED_POPULARITY_WEIGHT",
+                    0.15,
+                ),
+            ),
+            similar=SimilarHybridWeights(
+                content=_number(
+                    "RECOMMENDATION_HYBRID_SIMILAR_CONTENT_WEIGHT",
+                    0.70,
+                ),
+                association=_number(
+                    "RECOMMENDATION_HYBRID_SIMILAR_ASSOCIATION_WEIGHT",
+                    0.20,
+                ),
+                popularity=_number(
+                    "RECOMMENDATION_HYBRID_SIMILAR_POPULARITY_WEIGHT",
+                    0.10,
+                ),
+            ),
+            candidate_pool_multiplier=_integer(
+                "RECOMMENDATION_HYBRID_CANDIDATE_POOL_MULTIPLIER",
+                10,
+            ),
+            candidate_pool_cap=_integer(
+                "RECOMMENDATION_HYBRID_CANDIDATE_POOL_CAP",
+                500,
+            ),
+        )
+
+    def validate(self) -> None:
+        self.personalized.validate()
+        self.similar.validate()
+        if not 1 <= self.candidate_pool_multiplier <= 100:
+            raise ValueError(
+                "Hybrid candidate-pool multiplier must be between 1 and 100."
+            )
+        if not 1 <= self.candidate_pool_cap <= 10_000:
+            raise ValueError("Hybrid candidate-pool cap must be between 1 and 10000.")
+
+
 @dataclass(frozen=True, slots=True)
 class EvaluationSettings:
     k: int = 5
@@ -144,6 +237,7 @@ class Settings:
     api_key: str
     artifact_directory: Path
     als: AlsSettings = field(default_factory=AlsSettings)
+    hybrid: HybridSettings = field(default_factory=HybridSettings)
     evaluation: EvaluationSettings = field(default_factory=EvaluationSettings)
 
     @classmethod
@@ -157,11 +251,13 @@ class Settings:
                 )
             ),
             als=AlsSettings.from_environment(),
+            hybrid=HybridSettings.from_environment(),
             evaluation=EvaluationSettings.from_environment(),
         )
 
     def validate(self) -> None:
         self.als.validate()
+        self.hybrid.validate()
         self.evaluation.validate()
         if (
             self.artifact_directory.resolve()
@@ -170,6 +266,20 @@ class Settings:
             raise ValueError(
                 "Evaluation reports and model artifacts require separate directories."
             )
+
+
+def _validate_weights(values: tuple[float, ...], label: str) -> None:
+    if any(not math.isfinite(value) or value < 0.0 for value in values):
+        raise ValueError(f"{label} weights must be finite and non-negative.")
+    if not math.isclose(
+        sum(values),
+        1.0,
+        rel_tol=0.0,
+        abs_tol=_WEIGHT_TOLERANCE,
+    ):
+        raise ValueError(
+            f"{label} weights must sum to 1 within {_WEIGHT_TOLERANCE}."
+        )
 
 
 def _integer(name: str, default: int) -> int:

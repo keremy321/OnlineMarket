@@ -9,7 +9,7 @@ from uuid import UUID
 import pytest
 
 from app.artifacts import ArtifactStore
-from app.config import AlsSettings, EvaluationSettings
+from app.config import AlsSettings, EvaluationSettings, HybridSettings
 from app.contracts import (
     EvaluationModelMetrics,
     ModelEvaluationRequest,
@@ -23,13 +23,14 @@ from app.evaluation import (
     ranking_metrics,
 )
 from app.service import RecommendationModelService
-from tests.conftest import evaluation_interaction
+from tests.conftest import evaluation_interaction, evaluation_products
 
 
 def test_chronological_split_uses_timestamp_and_stable_order_id_tie_breaker() -> None:
     subject = "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     payload = {
         "evaluationVersion": "tie-v1",
+        "products": evaluation_products([1, 2]),
         "catalogueProductIds": [_product_id(1), _product_id(2)],
         "candidateProductIds": [_product_id(1), _product_id(2)],
         "interactions": [
@@ -79,6 +80,7 @@ def test_insufficient_history_and_unknown_products_are_reported() -> None:
     subject_b = "v1.BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
     payload = {
         "evaluationVersion": "excluded-v1",
+        "products": evaluation_products([1, 2]),
         "catalogueProductIds": [_product_id(1), _product_id(2)],
         "candidateProductIds": [_product_id(1), _product_id(2)],
         "interactions": [
@@ -137,12 +139,14 @@ def test_popularity_and_als_are_evaluated_with_catalogue_coverage(
     response = evaluate_request(
         ModelEvaluationRequest.model_validate(evaluation_payload),
         als_settings=AlsSettings(),
+        hybrid_settings=HybridSettings(),
         evaluation_settings=EvaluationSettings(),
         evaluated_at_utc=datetime(2026, 1, 5, tzinfo=UTC),
     )
 
     assert response.models.popularity.status == "Evaluated"
     assert response.models.als.status == "Evaluated"
+    assert response.models.hybrid.status == "Evaluated"
     assert response.models.tfidf.status == "NotEvaluated"
     assert response.models.fbt.status == "NotEvaluated"
     assert response.models.popularity.metrics is not None
@@ -157,6 +161,7 @@ def test_empty_dataset_and_no_eligible_subjects_are_safe() -> None:
     empty = ModelEvaluationRequest.model_validate(
         {
             "evaluationVersion": "empty-v1",
+            "products": [],
             "catalogueProductIds": [],
             "candidateProductIds": [],
             "interactions": [],
@@ -166,12 +171,14 @@ def test_empty_dataset_and_no_eligible_subjects_are_safe() -> None:
     response = evaluate_request(
         empty,
         als_settings=AlsSettings(),
+        hybrid_settings=HybridSettings(),
         evaluation_settings=EvaluationSettings(),
     )
 
     assert response.split.eligibleSubjectCount == 0
     assert response.models.popularity.status == "NotEvaluated"
     assert response.models.als.status == "NotEvaluated"
+    assert response.models.hybrid.status == "NotEvaluated"
 
 
 def test_repeated_evaluation_has_stable_hash_and_ranking_metrics(
@@ -182,11 +189,13 @@ def test_repeated_evaluation_has_stable_hash_and_ranking_metrics(
     first = evaluate_request(
         request,
         als_settings=AlsSettings(),
+        hybrid_settings=HybridSettings(),
         evaluation_settings=EvaluationSettings(),
     )
     second = evaluate_request(
         request,
         als_settings=AlsSettings(),
+        hybrid_settings=HybridSettings(),
         evaluation_settings=EvaluationSettings(),
     )
 
@@ -196,6 +205,9 @@ def test_repeated_evaluation_has_stable_hash_and_ranking_metrics(
     )
     assert _ranking_signature(first.models.als.metrics) == _ranking_signature(
         second.models.als.metrics
+    )
+    assert _ranking_signature(first.models.hybrid.metrics) == _ranking_signature(
+        second.models.hybrid.metrics
     )
 
 
@@ -227,6 +239,7 @@ def test_reports_publish_atomically_and_contain_no_identifiers(
     response = evaluate_request(
         request,
         als_settings=AlsSettings(),
+        hybrid_settings=HybridSettings(),
         evaluation_settings=EvaluationSettings(output_directory=tmp_path),
     )
     subjects = tuple(interaction.subjectId for interaction in request.interactions)
@@ -241,6 +254,9 @@ def test_reports_publish_atomically_and_contain_no_identifiers(
     assert all(subject not in combined for subject in subjects)
     assert "customerId" not in combined
     assert "subjectId" not in combined
+    assert "apiKey" not in combined
+    assert "derivationKey" not in combined
+    assert "connectionString" not in combined
     assert "Precision@5" in markdown_content
     assert "runtime-dependent" in markdown_content
 
@@ -254,6 +270,7 @@ def test_report_publication_rolls_back_when_second_publish_fails(
     response = evaluate_request(
         request,
         als_settings=AlsSettings(),
+        hybrid_settings=HybridSettings(),
         evaluation_settings=EvaluationSettings(output_directory=tmp_path),
     )
     original_replace = os.replace

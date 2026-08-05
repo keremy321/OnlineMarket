@@ -79,6 +79,69 @@ public sealed class PersonalizedRecommendationServiceTests
     }
 
     [Fact]
+    public async Task Hybrid_strategy_maps_diagnostics_and_rechecks_products()
+    {
+        var context = CreateContext();
+        var response = new RecommendationModelPersonalizedClientResponse(
+            "model-set-v3",
+            "HybridPersonalized",
+            [
+                HybridModelItem(InactiveId, 1m),
+                HybridModelItem(PurchasedId, 0.9m),
+                HybridModelItem(CandidateTwoId, 0.8m),
+                HybridModelItem(CandidateOneId, 0.7m),
+                HybridModelItem(CandidateTwoId, 0.6m)
+            ]);
+        var client = new StubClient(
+            RecommendationModelClientOutcome.Succeeded,
+            response);
+        var options = new PersonalizedRecommendationOptions
+        {
+            ModelStrategy = PersonalizedModelStrategy.Hybrid
+        };
+        var service = CreateService(
+            context,
+            client,
+            new CapturingDeriver(),
+            options);
+
+        var result = await service.GetAsync(Guid.NewGuid(), 10, true);
+
+        Assert.Equal("Hybrid", client.Request!.Strategy);
+        Assert.Equal(
+            [CandidateTwoId, CandidateOneId],
+            result.Select(item => item.ProductId));
+        Assert.All(
+            result,
+            item =>
+            {
+                Assert.Equal(
+                    PersonalizedRankingSource.PythonHybrid,
+                    item.RankingSource);
+                Assert.Equal(item.Score, item.FinalScore);
+                Assert.NotNull(item.AlsScore);
+                Assert.NotNull(item.ContentAffinityScore);
+                Assert.NotNull(item.AssociationScore);
+                Assert.NotNull(item.PopularityScore);
+                Assert.StartsWith("Hybrid.", item.ReasonCode);
+            });
+    }
+
+    [Fact]
+    public void Strategy_configuration_is_validated()
+    {
+        Assert.True(new PersonalizedRecommendationOptions().IsValid());
+        Assert.True(new PersonalizedRecommendationOptions
+        {
+            ModelStrategy = PersonalizedModelStrategy.Hybrid
+        }.IsValid());
+        Assert.False(new PersonalizedRecommendationOptions
+        {
+            ModelStrategy = (PersonalizedModelStrategy)99
+        }.IsValid());
+    }
+
+    [Fact]
     public async Task Cold_start_result_uses_popularity_fallback()
     {
         var context = CreateContext() with
@@ -217,6 +280,23 @@ public sealed class PersonalizedRecommendationServiceTests
             null,
             "Personalized.ImplicitAls",
             "Recommended from purchase interactions.");
+    }
+
+    private static RecommendationModelPersonalizedItemResponse HybridModelItem(
+        Guid productId,
+        decimal score)
+    {
+        return new RecommendationModelPersonalizedItemResponse(
+            productId,
+            score,
+            null,
+            "Hybrid.AlsDominant",
+            "Ranked primarily by implicit purchase affinity.",
+            0.9m,
+            0.5m,
+            0.2m,
+            0.1m,
+            score);
     }
 
     private sealed class StubStore(PersonalizedRecommendationContext context)

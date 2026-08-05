@@ -45,18 +45,42 @@ public sealed class SimilarRecommendationServiceTests
     {
         var context = CreateContext();
         var response = new RecommendationModelSimilarClientResponse(
-            "tfidf-test-v1",
+            "hybrid-test-v1",
+            "HybridSimilar",
             context.Source!.ProductId,
             [
                 new RecommendationModelSimilarItemResponse(
                     InactiveCandidateId,
-                    0.99m),
+                    0.99m,
+                    0m,
+                    1m,
+                    0.99m,
+                    "Hybrid.Similar",
+                    "Content similarity."),
                 new RecommendationModelSimilarItemResponse(
                     CandidateTwoId,
-                    0.80m),
+                    0.60m,
+                    0.70m,
+                    0.20m,
+                    0.80m,
+                    "Hybrid.Association",
+                    "Directional co-purchase affinity."),
                 new RecommendationModelSimilarItemResponse(
                     CandidateOneId,
-                    0.70m)
+                    0.70m,
+                    0.20m,
+                    0.40m,
+                    0.70m,
+                    "Hybrid.Similar",
+                    "Content similarity."),
+                new RecommendationModelSimilarItemResponse(
+                    CandidateTwoId,
+                    0.50m,
+                    0.10m,
+                    0.10m,
+                    0.60m,
+                    "Hybrid.Similar",
+                    "Duplicate lower-ranked result.")
             ]);
         var service = CreateService(
             context,
@@ -70,10 +94,13 @@ public sealed class SimilarRecommendationServiceTests
             item =>
             {
                 Assert.Equal(CandidateTwoId, item.ProductId);
-                Assert.Equal(0.80m, item.TfidfScore);
+                Assert.Equal(0.80m, item.Score);
+                Assert.Equal(0.60m, item.TfidfScore);
                 Assert.Equal(0.20m, item.PopularityScore);
                 Assert.Equal(0.30m, item.FrequentlyBoughtTogetherScore);
-                Assert.Equal(SimilarRankingSource.PythonTfidf, item.RankingSource);
+                Assert.Equal(0.70m, item.CoPurchaseScore);
+                Assert.Equal(SimilarRankingSource.PythonHybrid, item.RankingSource);
+                Assert.Equal("Hybrid.Association", item.ReasonCode);
             },
             item => Assert.Equal(CandidateOneId, item.ProductId));
     }

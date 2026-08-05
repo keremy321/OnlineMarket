@@ -148,16 +148,19 @@ The stored market `CustomerId` remains internal to Recommendation.Api. Python
 treats `SubjectId` as an opaque string; it never receives the derivation key or
 the direct identifier.
 
-Personalized model requests contain `subjectId`, a capped `limit`, and
-`excludePreviouslyPurchased`. Responses contain model version, strategy, and
+Personalized model requests contain `subjectId`, a capped `limit`,
+`excludePreviouslyPurchased`, and the configured `Als` or `Hybrid` strategy.
+Hybrid responses add ALS, content-affinity, association, popularity, and final
+diagnostic scores. Responses contain model version, strategy, and
 recommendation-owned product IDs/scores/reason metadata only. Unknown subjects
 return an explicit cold-start result so Recommendation.Api can use its local
 preference/popularity fallback.
 
-Evaluation requests contain catalogue/candidate product IDs plus chronological
-order interactions with `OrderId`, opaque `SubjectId`, `OccurredAtUtc`, product
-ID, and quantity only. Responses contain aggregate dataset/split counts,
-Popularity and ALS metrics, explicit NotEvaluated reasons for unsupported
+Evaluation requests contain purpose-limited product content/availability
+snapshots, catalogue/candidate product IDs, and chronological order interactions
+with `OrderId`, opaque `SubjectId`, `OccurredAtUtc`, product ID, and quantity.
+Responses contain aggregate dataset/split counts, Popularity, ALS, and Hybrid
+metrics and comparisons, explicit NotEvaluated reasons for unsupported
 protocols, an input hash, and report identifiers. They never return raw
 subjects or order-level payloads.
 

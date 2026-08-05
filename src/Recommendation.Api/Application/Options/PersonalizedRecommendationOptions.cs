@@ -9,6 +9,9 @@ public sealed class PersonalizedRecommendationOptions
 
     public int MaximumLimit { get; init; } = 50;
 
+    public PersonalizedModelStrategy ModelStrategy { get; init; }
+        = PersonalizedModelStrategy.Als;
+
     public decimal CategoryAffinityWeight { get; init; } = 0.50m;
 
     public decimal BrandAffinityWeight { get; init; } = 0.20m;
@@ -20,6 +23,7 @@ public sealed class PersonalizedRecommendationOptions
         return DefaultLimit > 0
             && MaximumLimit >= DefaultLimit
             && MaximumLimit <= AbsoluteMaximumLimit
+            && Enum.IsDefined(ModelStrategy)
             && CategoryAffinityWeight >= 0m
             && BrandAffinityWeight >= 0m
             && PopularityWeight >= 0m
@@ -27,4 +31,10 @@ public sealed class PersonalizedRecommendationOptions
                 + BrandAffinityWeight
                 + PopularityWeight == 1m;
     }
+}
+
+public enum PersonalizedModelStrategy
+{
+    Als,
+    Hybrid
 }
