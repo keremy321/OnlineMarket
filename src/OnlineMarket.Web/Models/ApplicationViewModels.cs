@@ -188,6 +188,8 @@ public class ProductFormViewModel
     [StringLength(500)]
     public string? ImageUrl { get; set; }
 
+    public Microsoft.AspNetCore.Http.IFormFile? ImageFile { get; set; }
+
     public bool IsActive { get; set; } = true;
 
     [Range(0, 100000, ErrorMessage = "Stok 0 veya daha fazla olmalıdır.")]
