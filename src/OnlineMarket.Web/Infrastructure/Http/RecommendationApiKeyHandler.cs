@@ -6,7 +6,18 @@ public sealed class RecommendationApiKeyHandler(
     IOptions<RecommendationOutboxOptions> options)
     : DelegatingHandler
 {
-    private const string RecommendationQueryPathPrefix = "/api/v1/recommendations/";
+    private static readonly HashSet<string> AuthenticatedRecommendationPaths = new(
+        StringComparer.OrdinalIgnoreCase)
+    {
+        "/api/v1/recommendations/popular",
+        "/api/v1/recommendations/cart"
+    };
+    private static readonly string[] AuthenticatedRecommendationGuidPathPrefixes =
+    [
+        "/api/v1/recommendations/fbt/",
+        "/api/v1/recommendations/similar/",
+        "/api/v1/recommendations/customers/"
+    ];
     private static readonly HashSet<string> AuthenticatedEventPaths = new(
         StringComparer.OrdinalIgnoreCase)
     {
@@ -56,9 +67,24 @@ public sealed class RecommendationApiKeyHandler(
             ? requestUri.AbsolutePath
             : requestUri.OriginalString.Split('?', 2)[0];
         return AuthenticatedEventPaths.Contains(path)
-            || path.StartsWith(
-                RecommendationQueryPathPrefix,
-                StringComparison.OrdinalIgnoreCase);
+            || AuthenticatedRecommendationPaths.Contains(path)
+            || IsAuthenticatedRecommendationGuidPath(path);
+    }
+
+    private static bool IsAuthenticatedRecommendationGuidPath(string path)
+    {
+        foreach (var prefix in AuthenticatedRecommendationGuidPathPrefixes)
+        {
+            if (!path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var routeValue = path[prefix.Length..];
+            return Guid.TryParseExact(routeValue, "D", out _);
+        }
+
+        return false;
     }
 
     private bool IsConfiguredRecommendationApi(Uri requestUri)

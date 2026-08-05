@@ -38,9 +38,18 @@
                     <a asp-controller="Catalog" asp-action="Index" class="btn btn-light text-primary btn-lg px-4 py-3 font-weight-bold rounded-pill shadow-sm">
                         <i class="bi bi-bag-check-fill me-2 text-primary"></i>Alışverişe Başla
                     </a>
-                    <a href="#recommendations" class="btn btn-outline-light btn-lg px-4 py-3 font-weight-bold rounded-pill">
-                        <i class="bi bi-stars me-2"></i>Sana Özel Öneriler
-                    </a>
+                    @if (Model.PersonalizedRecommendations.Any())
+                    {
+                        <a href="#personalized-recommendations" class="btn btn-outline-light btn-lg px-4 py-3 font-weight-bold rounded-pill">
+                            <i class="bi bi-stars me-2"></i>Sana Özel Öneriler
+                        </a>
+                    }
+                    else
+                    {
+                        <a href="#recommendations" class="btn btn-outline-light btn-lg px-4 py-3 font-weight-bold rounded-pill">
+                            <i class="bi bi-stars me-2"></i>Akıllı Öneriler
+                        </a>
+                    }
                 </div>
             </div>
 
@@ -144,6 +153,33 @@
     </section>
 }
 
+@if (Model.PersonalizedRecommendations.Any())
+{
+    <section class="mb-5" id="personalized-recommendations">
+        <div class="d-flex align-items-center justify-content-between mb-4">
+            <div>
+                <h2 class="fw-extrabold mb-1 text-dark">Sana Özel Öneriler</h2>
+                <p class="text-secondary small mb-0">Alışveriş geçmişine göre seçilen, güncel ve stokta olan ürünler</p>
+            </div>
+            <a asp-controller="Catalog" asp-action="Index" class="btn btn-outline-primary rounded-pill px-4 font-weight-bold">
+                Tüm Kataloğu İncele <i class="bi bi-grid me-1"></i>
+            </a>
+        </div>
+
+        <div class="row g-4">
+            @foreach (var recommendation in Model.PersonalizedRecommendations)
+            {
+                if (recommendation.ProductDetails is { } product)
+                {
+                    <div class="col-6 col-md-4 col-lg-3">
+                        <partial name="_ProductCard" model="product" />
+                    </div>
+                }
+            }
+        </div>
+    </section>
+}
+
 <!-- 5 Recommendation Engine V1 Showcase -->
 <section class="mb-5" id="recommendations">
     <div class="card-custom p-4 bg-white border-0 shadow-sm rounded-4">
@@ -158,7 +194,7 @@
                     </span>
                 </div>
                 <h2 class="fw-extrabold mt-2 mb-1 text-dark">Sizin İçin Seçtiklerimiz</h2>
-                <p class="text-secondary small mb-0">Son siparişlerinize ve sepet kombinasyonlarınıza özel hesaplanan akıllı tavsiyeler</p>
+                <p class="text-secondary small mb-0">Güncel katalog ve alışveriş eğilimlerinden hesaplanan akıllı tavsiyeler</p>
             </div>
             <a asp-controller="Catalog" asp-action="Index" class="btn btn-sm btn-outline-success rounded-pill fw-semibold px-3 py-2">
                 Tüm Kataloğu Gör <i class="bi bi-arrow-right ms-1"></i>
@@ -242,45 +278,7 @@
                 }
             }
 
-            <!-- 3. Personalized Recommendation -->
-            @if (Model.PersonalizedRecommendations.Any())
-            {
-                var pers = Model.PersonalizedRecommendations.First();
-                if (pers.ProductDetails != null)
-                {
-                    <div class="col-md-6 col-lg-4">
-                        <div class="card border-0 shadow-sm rounded-4 h-100 p-3 bg-white border-start border-danger border-4">
-                            <div class="d-flex align-items-center justify-content-between mb-2">
-                                <span class="badge badge-personalized px-2 py-1 rounded-pill"><i class="bi bi-heart-fill me-1"></i> Sana Özel</span>
-                                <span class="badge bg-light text-dark border font-mono">Alışkanlık</span>
-                            </div>
-                            <div class="d-flex align-items-center gap-3 mt-2">
-                                <img src="@(string.IsNullOrEmpty(pers.ProductDetails.ImageUrl) ? "https://placehold.co/120x120?text=Urun" : pers.ProductDetails.ImageUrl)" class="rounded-3" style="width: 70px; height: 70px; object-fit: contain;" alt="@pers.ProductDetails.Name" />
-                                <div>
-                                    <h6 class="fw-bold mb-1 text-dark">
-                                        <a asp-controller="Catalog" asp-action="Details" asp-route-id="@pers.ProductDetails.Id" class="text-dark text-decoration-none">@pers.ProductDetails.Name</a>
-                                    </h6>
-                                    <span class="text-secondary small d-block">@pers.ProductDetails.BrandName</span>
-                                    <div class="mt-1">
-                                        <span class="fw-extrabold text-success fs-5">@pers.ProductDetails.Price.ToString("N2") ₺</span>
-                                        <span class="vat-info ms-1">(+%@pers.ProductDetails.VatRate KDV)</span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="mt-3 pt-2 border-top d-flex align-items-center justify-content-between">
-                                <span class="text-secondary extra-small"><i class="bi bi-info-circle me-1 text-danger"></i> Geçmiş siparişlerinize göre özel</span>
-                                <form asp-controller="Cart" asp-action="AddToCart" method="post">
-                                    @Html.AntiForgeryToken()
-                                    <input type="hidden" name="productId" value="@pers.ProductDetails.Id" />
-                                    <button type="submit" class="btn btn-sm btn-success rounded-pill px-3 font-weight-bold"><i class="bi bi-plus-lg me-1"></i> Ekle</button>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-                }
-            }
-
-            <!-- 4. Similar Recommendation -->
+            <!-- 3. Similar Recommendation -->
             @if (Model.SimilarProducts.Any())
             {
                 var sim = Model.SimilarProducts.First();
@@ -318,7 +316,7 @@
                 }
             }
 
-            <!-- 5. Cart Completion Recommendation -->
+            <!-- 4. Cart Completion Recommendation -->
             @if (Model.CartCompletionRecommendations.Any())
             {
                 var cartComp = Model.CartCompletionRecommendations.First();
@@ -375,34 +373,7 @@
         @foreach (var product in Model.FeaturedProducts)
         {
             <div class="col-6 col-md-4 col-lg-3">
-                <div class="product-card-modern h-100 d-flex flex-column p-3">
-                    <div class="product-img-wrapper mb-3">
-                        <span class="position-absolute top-0 start-0 m-2 badge bg-success-subtle text-success border border-success-subtle rounded-pill font-weight-bold">
-                            <i class="bi bi-check2 me-1"></i> Stokta
-                        </span>
-                        <img src="@(string.IsNullOrEmpty(product.ImageUrl) ? "https://placehold.co/200x200?text=Urun" : product.ImageUrl)" class="img-fluid rounded" style="max-height: 140px; object-fit: contain;" alt="@product.Name" />
-                    </div>
-
-                    <span class="text-secondary extra-small text-uppercase font-weight-bold">@product.CategoryName • @product.BrandName</span>
-                    <h6 class="fw-bold text-dark mt-1 mb-2 text-truncate" title="@product.Name">
-                        <a asp-controller="Catalog" asp-action="Details" asp-route-id="@product.Id" class="text-dark text-decoration-none">@product.Name</a>
-                    </h6>
-
-                    <div class="mt-auto pt-3 border-top d-flex align-items-center justify-content-between">
-                        <div>
-                            <div class="fw-extrabold text-success fs-5">@product.Price.ToString("N2") ₺</div>
-                            <div class="vat-info">+%@product.VatRate KDV</div>
-                        </div>
-
-                        <form asp-controller="Cart" asp-action="AddToCart" method="post">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="productId" value="@product.Id" />
-                            <button type="submit" class="btn btn-primary-custom rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;" title="Sepete Ekle">
-                                <i class="bi bi-cart-plus fs-5"></i>
-                            </button>
-                        </form>
-                    </div>
-                </div>
+                <partial name="_ProductCard" model="product" />
             </div>
         }
     </div>

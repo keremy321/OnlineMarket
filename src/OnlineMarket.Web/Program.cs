@@ -5,6 +5,7 @@ using OnlineMarket.Web.Application.Options;
 using OnlineMarket.Web.Application.Services;
 using OnlineMarket.Web.Domain.Entities;
 using OnlineMarket.Web.Infrastructure.Http;
+using OnlineMarket.Web.Infrastructure.Identity;
 using OnlineMarket.Web.Infrastructure.Importing;
 using OnlineMarket.Web.Infrastructure.Persistence;
 using OnlineMarket.Web.Infrastructure.Workers;
@@ -61,6 +62,7 @@ builder.Services.ConfigureApplicationCookie(options =>
 
 // Register Application Services
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<ICustomerIdentityResolver, CustomerIdentityResolver>();
 builder.Services.AddScoped<ICustomerAddressService, CustomerAddressService>();
 builder.Services.AddScoped<ICatalogService, CatalogService>();
 builder.Services.AddScoped<IProductImageService, ProductImageService>();
@@ -78,6 +80,15 @@ builder.Services.AddScoped<IOutboxDispatcher, HttpOutboxDispatcher>();
 builder.Services.AddScoped<DatabaseSeeder>();
 builder.Services.AddScoped<DemoExcelImporter>();
 
+builder.Services
+    .AddOptions<RecommendationUiOptions>()
+    .Bind(builder.Configuration.GetSection(RecommendationUiOptions.SectionName))
+    .Validate(
+        options => options.PersonalizedDisplayLimit is >= 1
+            and <= RecommendationUiOptions.MaximumPersonalizedDisplayLimit,
+        $"{RecommendationUiOptions.SectionName}:PersonalizedDisplayLimit must be between 1 and {RecommendationUiOptions.MaximumPersonalizedDisplayLimit}.")
+    .ValidateOnStart();
+
 // Configure AI Assistant Options & API Client
 builder.Services.Configure<AiAssistantOptions>(builder.Configuration.GetSection(AiAssistantOptions.SectionName));
 var aiTimeoutSeconds = builder.Configuration.GetValue<int>("AiAssistant:TimeoutSeconds", 10);
@@ -93,6 +104,7 @@ builder.Services.AddHttpClient<IRecommendationClient, RecommendationApiClient>(c
     client.BaseAddress = new Uri(recommendationApiUrl);
     client.Timeout = TimeSpan.FromSeconds(5);
 })
+    .RemoveAllLoggers()
     .AddHttpMessageHandler<RecommendationApiKeyHandler>();
 
 var erpIntegrationApiUrl = builder.Configuration["Services:ErpIntegrationApi"] ?? "http://localhost:5046";

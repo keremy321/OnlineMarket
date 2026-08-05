@@ -118,6 +118,100 @@ public sealed class RecommendationOutboxAuthenticationTests(
     }
 
     [Fact]
+    public async Task Personalized_query_maps_contract_and_uses_capped_authenticated_route()
+    {
+        var customerId = Guid.NewGuid();
+        var recommendations = Enumerable.Range(0, 10)
+            .Select(index => new PersonalizedRecommendationResponseDto(
+                Guid.NewGuid(),
+                1m - (index * 0.05m),
+                "Personalized",
+                "Personalized.Hybrid",
+                "Selected for you",
+                new PersonalizedRecommendationMetricsDto(
+                    0.8m,
+                    "PythonHybrid",
+                    "model-v3",
+                    0.7m,
+                    0.6m,
+                    0.5m,
+                    0.4m,
+                    0.65m)))
+            .ToArray();
+        var recorder = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent.Create(recommendations)
+        });
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var logs = new CapturingLogger<RecommendationApiClient>();
+        var client = new RecommendationApiClient(httpClient, logs);
+
+        var result = await client.GetPersonalizedRecommendationsAsync(
+            customerId,
+            99);
+
+        Assert.Equal(
+            recommendations.Take(8).Select(item => item.ProductId),
+            result.Select(item => item.ProductId));
+        var first = result[0];
+        Assert.Equal("Personalized", first.RecommendationType);
+        Assert.Equal("Personalized.Hybrid", first.ReasonCode);
+        Assert.Equal("Selected for you", first.Reason);
+        Assert.Equal("PythonHybrid", first.PersonalizedMetrics?.RankingSource);
+        Assert.Equal("model-v3", first.PersonalizedMetrics?.ModelVersion);
+        Assert.Equal(0.7m, first.PersonalizedMetrics?.AlsScore);
+        Assert.Equal(0.6m, first.PersonalizedMetrics?.ContentAffinityScore);
+        Assert.Equal(0.5m, first.PersonalizedMetrics?.AssociationScore);
+        Assert.Equal(0.4m, first.PersonalizedMetrics?.PopularityScore);
+        Assert.Equal(0.65m, first.PersonalizedMetrics?.FinalScore);
+        Assert.Equal(
+            $"/api/v1/recommendations/customers/{customerId}",
+            recorder.RequestPath);
+        Assert.Equal("?limit=8", recorder.RequestQuery);
+        Assert.Equal(ApiKey, recorder.ApiKey);
+        Assert.DoesNotContain(
+            logs.Entries,
+            entry => entry.Contains(customerId.ToString(), StringComparison.OrdinalIgnoreCase)
+                || entry.Contains(ApiKey, StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task Personalized_query_rejects_non_positive_limit(int limit)
+    {
+        var recorder = new RecordingHandler();
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var client = new RecommendationApiClient(
+            httpClient,
+            NullLogger<RecommendationApiClient>.Instance);
+
+        var recommendations = await client.GetPersonalizedRecommendationsAsync(
+            Guid.NewGuid(),
+            limit);
+
+        Assert.Empty(recommendations);
+        Assert.Null(recorder.RequestPath);
+    }
+
+    [Fact]
+    public async Task Personalized_query_rejects_empty_customer_id()
+    {
+        var recorder = new RecordingHandler();
+        using var httpClient = CreateRecommendationHttpClient(recorder, ApiKey);
+        var client = new RecommendationApiClient(
+            httpClient,
+            NullLogger<RecommendationApiClient>.Instance);
+
+        var recommendations = await client.GetPersonalizedRecommendationsAsync(
+            Guid.Empty,
+            8);
+
+        Assert.Empty(recommendations);
+        Assert.Null(recorder.RequestPath);
+    }
+
+    [Fact]
     public async Task Cart_completion_client_posts_strict_body_with_api_key()
     {
         var firstProductId = Guid.NewGuid();
@@ -275,6 +369,32 @@ public sealed class RecommendationOutboxAuthenticationTests(
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal("/api/v1/health", recorder.RequestPath);
+        Assert.Null(recorder.ApiKey);
+    }
+
+    [Fact]
+    public async Task Unapproved_recommendation_route_does_not_receive_recommendation_api_key()
+    {
+        var recorder = new RecordingHandler();
+        using var client = CreateRecommendationHttpClient(recorder, ApiKey);
+
+        using var response = await client.GetAsync(
+            "/api/v1/recommendations/internal-operation");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Null(recorder.ApiKey);
+    }
+
+    [Fact]
+    public async Task Lookalike_recommendation_route_does_not_receive_api_key()
+    {
+        var recorder = new RecordingHandler();
+        using var client = CreateRecommendationHttpClient(recorder, ApiKey);
+
+        using var response = await client.GetAsync(
+            $"/api/v1/recommendations/customers/{Guid.NewGuid():D}/internal");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Null(recorder.ApiKey);
     }
 

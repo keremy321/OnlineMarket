@@ -7,6 +7,7 @@ namespace OnlineMarket.Web.Infrastructure.Http;
 public class RecommendationApiClient : IRecommendationClient
 {
     private const int SimilarProductLimit = 4;
+    private const int PersonalizedProductLimit = 8;
     private static readonly TimeSpan RecommendationTimeout =
         TimeSpan.FromSeconds(4);
 
@@ -141,18 +142,68 @@ public class RecommendationApiClient : IRecommendationClient
 
     public async Task<List<RecommendationItemDto>> GetPersonalizedRecommendationsAsync(Guid customerId, int count = 5)
     {
-        if (IsCircuitOpen()) return new List<RecommendationItemDto>();
+        if (customerId == Guid.Empty || count <= 0 || IsCircuitOpen())
+        {
+            return [];
+        }
+
+        var limit = Math.Min(count, PersonalizedProductLimit);
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            var response = await _httpClient.GetFromJsonAsync<List<RecommendationItemDto>>($"/api/v1/recommendations/customers/{customerId}?count={count}", cts.Token);
-            return response ?? new List<RecommendationItemDto>();
+            using var cts = new CancellationTokenSource(RecommendationTimeout);
+            using var response = await _httpClient.GetAsync(
+                $"/api/v1/recommendations/customers/{customerId:D}?limit={limit}",
+                cts.Token);
+            if (!response.IsSuccessStatusCode)
+            {
+                RecordFailure();
+                _logger.LogWarning(
+                    "Personalized recommendations returned a non-success response; the section will be hidden.");
+                return [];
+            }
+
+            var recommendations = await response.Content
+                .ReadFromJsonAsync<List<PersonalizedRecommendationResponseDto>>(
+                    cancellationToken: cts.Token);
+            if (recommendations is null)
+            {
+                return [];
+            }
+
+            if (recommendations.Any(item =>
+                    item.ProductId == Guid.Empty
+                    || !string.Equals(
+                        item.RecommendationType,
+                        "Personalized",
+                        StringComparison.Ordinal)
+                    || string.IsNullOrWhiteSpace(item.ReasonCode)
+                    || string.IsNullOrWhiteSpace(item.ReasonText)
+                    || item.Metrics is null
+                    || string.IsNullOrWhiteSpace(item.Metrics.RankingSource)))
+            {
+                RecordFailure();
+                _logger.LogWarning(
+                    "Personalized recommendations returned an invalid contract; the section will be hidden.");
+                return [];
+            }
+
+            return recommendations
+                .Take(limit)
+                .Select(item => new RecommendationItemDto(
+                    item.ProductId,
+                    item.ReasonText,
+                    item.Score,
+                    RecommendationType: item.RecommendationType,
+                    ReasonCode: item.ReasonCode,
+                    PersonalizedMetrics: item.Metrics))
+                .ToList();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
             RecordFailure();
-            _logger.LogWarning("Recommendation.Api unavailable ({Message}). Circuit opened for 15s.", ex.Message);
-            return new List<RecommendationItemDto>();
+            _logger.LogWarning(
+                "Personalized recommendations were unavailable; the section will be hidden.");
+            return [];
         }
     }
 
