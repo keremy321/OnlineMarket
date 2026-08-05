@@ -173,6 +173,20 @@ public record RecommendationItemDto(
     ProductDto? ProductDetails = null
 );
 
+public sealed record SimilarRecommendationResponseDto(
+    [property: System.Text.Json.Serialization.JsonPropertyName("productId")]
+    Guid ProductId,
+    [property: System.Text.Json.Serialization.JsonPropertyName("score")]
+    decimal Score,
+    [property: System.Text.Json.Serialization.JsonPropertyName("recommendationType")]
+    string RecommendationType,
+    [property: System.Text.Json.Serialization.JsonPropertyName("reasonCode")]
+    string ReasonCode,
+    [property: System.Text.Json.Serialization.JsonPropertyName("reasonText")]
+    string ReasonText,
+    [property: System.Text.Json.Serialization.JsonPropertyName("metrics")]
+    System.Text.Json.JsonElement? Metrics = null);
+
 public sealed record AdminDashboardDto(
     int TotalProducts,
     int OutOfStockProducts,

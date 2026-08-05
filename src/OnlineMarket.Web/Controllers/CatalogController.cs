@@ -111,13 +111,15 @@ public class CatalogController : Controller
             if (product == null) return NotFound();
 
             var rawFbtTask = _recommendationClient.GetFrequentlyBoughtTogetherAsync(id, 4);
-            var rawSimilarTask = _recommendationClient.GetSimilarProductsAsync(id, 4);
+            var rawSimilarTask = GetSimilarRecommendationsAsync(id);
 
             var rawFbt = await rawFbtTask;
             var rawSimilar = await rawSimilarTask;
 
             var fbtRecs = await EnrichAndValidateRecommendationsAsync(rawFbt);
-            var similarRecs = await EnrichAndValidateRecommendationsAsync(rawSimilar);
+            var similarRecs = await ResolveSimilarRecommendationsAsync(
+                id,
+                rawSimilar);
 
             var viewModel = new ProductDetailViewModel
             {
@@ -132,6 +134,71 @@ public class CatalogController : Controller
         {
             _logger.LogError(ex, "Error occurred in CatalogController.Details for ProductId {Id}.", id);
             return NotFound();
+        }
+    }
+
+    private async Task<List<RecommendationItemDto>> GetSimilarRecommendationsAsync(
+        Guid productId)
+    {
+        try
+        {
+            return await _recommendationClient.GetSimilarProductsAsync(
+                productId,
+                4);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Similar recommendations were unavailable for ProductId {ProductId}; the section will be hidden.",
+                productId);
+            return [];
+        }
+    }
+
+    private async Task<List<RecommendationItemDto>> ResolveSimilarRecommendationsAsync(
+        Guid sourceProductId,
+        List<RecommendationItemDto> recommendations)
+    {
+        if (recommendations.Count == 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            var seenProductIds = new HashSet<Guid> { sourceProductId };
+            var orderedRecommendations = recommendations
+                .Where(item => item.ProductId != Guid.Empty)
+                .Where(item => seenProductIds.Add(item.ProductId))
+                .ToList();
+            if (orderedRecommendations.Count == 0)
+            {
+                return [];
+            }
+
+            var products = await _catalogService.GetProductsByIdsAsync(
+                orderedRecommendations.Select(item => item.ProductId));
+
+            return orderedRecommendations
+                .Where(item => products.TryGetValue(item.ProductId, out var product)
+                    && product.IsActive
+                    && product.IsInStock
+                    && product.StockQuantity > 0)
+                .Select(item => item with
+                {
+                    ProductDetails = products[item.ProductId]
+                })
+                .Take(4)
+                .ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Similar recommendation products could not be resolved for ProductId {ProductId}; the section will be hidden.",
+                sourceProductId);
+            return [];
         }
     }
 
