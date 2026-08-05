@@ -200,6 +200,10 @@ if (seedDevelopmentData)
         app.Configuration["SeedAdmin:Password"]);
     var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
     await seeder.SeedAsync(catalogSeedPath, credentials);
+
+    var productImageService = scope.ServiceProvider.GetRequiredService<IProductImageService>();
+    await productImageService.BulkMatchImagesFromFolderAsync();
+
     return;
 }
 
@@ -236,6 +240,9 @@ try
             var seeder = scope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
             var credentials = new SeedAdminCredentials("admin@onlinemarket.com", "Admin123!");
             await seeder.SeedAsync(catalogSeedPath, credentials);
+
+            var productImageService = scope.ServiceProvider.GetRequiredService<IProductImageService>();
+            await productImageService.BulkMatchImagesFromFolderAsync();
         }
     }
 }
