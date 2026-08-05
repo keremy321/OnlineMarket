@@ -7,6 +7,7 @@ public sealed class RecommendationModelEndpointAuthenticationTests
 {
     [Theory]
     [InlineData("/api/v1/recommendations/recalculate-models", "POST")]
+    [InlineData("/api/v1/recommendations/evaluate-models", "POST")]
     [InlineData(
         "/api/v1/recommendations/similar/00000000-0000-0000-0000-000000000001",
         "GET")]

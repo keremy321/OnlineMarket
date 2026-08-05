@@ -129,6 +129,11 @@ Two workers must not claim the same message.
 - Personalized façade requests derive `SubjectId` inside Recommendation.Api.
   Python/model/circuit failures and unknown subjects use a deterministic local
   category, brand, and popularity fallback.
+- Offline evaluation uses a dedicated Recommendation.Api snapshot store to
+  export UTC order chronology and pseudonymous subjects without CustomerId.
+  Python trains isolated in-memory Popularity/ALS evaluators, writes atomic
+  reports, and never activates or mutates the serving artifact. Evaluation has
+  a separate timeout and does not participate in the inference circuit.
 
 ## ERP Integration
 

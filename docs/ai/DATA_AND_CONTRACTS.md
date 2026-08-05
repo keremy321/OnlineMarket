@@ -131,6 +131,7 @@ GET  /health
 POST /api/v1/models/train
 POST /api/v1/models/similar
 POST /api/v1/models/personalized
+POST /api/v1/models/evaluate
 GET  /api/v1/models/current
 ```
 
@@ -140,6 +141,7 @@ GET  /api/v1/models/current
 POST /api/v1/recommendations/recalculate-models
 GET  /api/v1/recommendations/similar/{productId}?limit={value}
 GET  /api/v1/recommendations/customers/{customerId}?limit={value}
+POST /api/v1/recommendations/evaluate-models
 ```
 
 The stored market `CustomerId` remains internal to Recommendation.Api. Python
@@ -151,6 +153,13 @@ Personalized model requests contain `subjectId`, a capped `limit`, and
 recommendation-owned product IDs/scores/reason metadata only. Unknown subjects
 return an explicit cold-start result so Recommendation.Api can use its local
 preference/popularity fallback.
+
+Evaluation requests contain catalogue/candidate product IDs plus chronological
+order interactions with `OrderId`, opaque `SubjectId`, `OccurredAtUtc`, product
+ID, and quantity only. Responses contain aggregate dataset/split counts,
+Popularity and ALS metrics, explicit NotEvaluated reasons for unsupported
+protocols, an input hash, and report identifiers. They never return raw
+subjects or order-level payloads.
 
 ### OrderReadyForErpV1
 

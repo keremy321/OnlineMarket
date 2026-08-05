@@ -18,7 +18,8 @@ public sealed class RecommendationsController(
     ICartCompletionRecommendationService cartCompletionService,
     ISimilarRecommendationService similarService,
     IPersonalizedRecommendationService personalizedService,
-    IRecommendationModelOrchestrationService modelOrchestrationService)
+    IRecommendationModelOrchestrationService modelOrchestrationService,
+    IRecommendationModelEvaluationService modelEvaluationService)
     : ControllerBase
 {
     [HttpGet("popular")]
@@ -148,7 +149,31 @@ public sealed class RecommendationsController(
                 result.Metadata.AlsParameters.Regularization,
                 result.Metadata.AlsParameters.Iterations,
                 result.Metadata.AlsParameters.Alpha,
-                result.Metadata.AlsParameters.RandomSeed)));
+            result.Metadata.AlsParameters.RandomSeed)));
+    }
+
+    [HttpPost("evaluate-models")]
+    [ProducesResponseType<RecommendationModelEvaluationResponse>(
+        StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(
+        StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> EvaluateModels(
+        CancellationToken cancellationToken)
+    {
+        var result = await modelEvaluationService.EvaluateAsync(
+            cancellationToken);
+        if (result.Outcome != RecommendationModelClientOutcome.Succeeded
+            || result.Value is null)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new ApiErrorResponse(
+                    "RecommendationModel.EvaluationUnavailable",
+                    "Recommendation model evaluation is currently unavailable.",
+                    true));
+        }
+
+        return Ok(MapModelEvaluation(result.Value));
     }
 
     [HttpPost("recalculate")]
@@ -289,5 +314,89 @@ public sealed class RecommendationsController(
                 item.Confidence,
                 item.RankingSource.ToString(),
                 item.ModelVersion));
+    }
+
+    private static RecommendationModelEvaluationResponse MapModelEvaluation(
+        RecommendationModelEvaluationClientResponse response)
+    {
+        return new RecommendationModelEvaluationResponse(
+            response.Status,
+            response.EvaluationVersion,
+            response.EvaluatedAtUtc,
+            response.InputHash,
+            new RecommendationModelEvaluationDatasetContract(
+                response.Dataset.ProductCount,
+                response.Dataset.CandidateProductCount,
+                response.Dataset.SubjectCount,
+                response.Dataset.OrderCount,
+                response.Dataset.InteractionCount),
+            new RecommendationModelEvaluationSplitContract(
+                response.Split.Strategy,
+                response.Split.Description,
+                response.Split.K,
+                response.Split.MinimumHistoricalOrdersPerSubject,
+                response.Split.HoldoutOrderCount,
+                response.Split.ExcludePreviouslyPurchased,
+                response.Split.RandomSeed,
+                response.Split.EligibleSubjectCount,
+                response.Split.ExcludedSubjectCount,
+                response.Split.TrainingOrderCount,
+                response.Split.TestOrderCount,
+                response.Split.TrainingInteractionCount,
+                response.Split.TestInteractionCount),
+            new RecommendationModelEvaluationExcludedDataContract(
+                response.ExcludedData.InsufficientHistorySubjectCount,
+                response.ExcludedData.NoUsableTrainingHistorySubjectCount,
+                response.ExcludedData.NoUsableTestInteractionsSubjectCount,
+                response.ExcludedData.DevelopmentCapSubjectCount,
+                response.ExcludedData.ProductsAbsentFromTrainingInteractions,
+                response.ExcludedData.UnknownProductInteractionCount,
+                response.ExcludedData.PopularityFallbackSubjectCount),
+            new RecommendationModelEvaluationModelsContract(
+                MapEvaluationModel(response.Models.Popularity),
+                MapEvaluationModel(response.Models.Als),
+                MapEvaluationModel(response.Models.Tfidf),
+                MapEvaluationModel(response.Models.Fbt)),
+            response.ReportIdentifier,
+            new RecommendationModelEvaluationReportFilesContract(
+                response.Reports.JsonFile,
+                response.Reports.MarkdownFile),
+            response.Limitations);
+    }
+
+    private static RecommendationModelEvaluationModelContract
+        MapEvaluationModel(
+            RecommendationModelEvaluationModelResponse model)
+    {
+        return new RecommendationModelEvaluationModelContract(
+            model.Status,
+            model.Reason,
+            model.Metrics is null
+                ? null
+                : new RecommendationModelEvaluationMetricsContract(
+                    model.Metrics.PrecisionAtK,
+                    model.Metrics.RecallAtK,
+                    model.Metrics.HitRateAtK,
+                    model.Metrics.NdcgAtK,
+                    model.Metrics.CatalogueCoverage,
+                    model.Metrics.KnownSubjectCatalogueCoverage,
+                    model.Metrics.CatalogueCoverageIncludingFallback,
+                    model.Metrics.EligibleSubjectCount,
+                    model.Metrics.TrainingInteractionCount,
+                    model.Metrics.TestInteractionCount,
+                    model.Metrics.TrainingDurationMilliseconds,
+                    model.Metrics.AverageInferenceLatencyMilliseconds,
+                    model.Metrics.P95InferenceLatencyMilliseconds,
+                    model.Metrics.FallbackSubjectCount),
+            model.Parameters is null
+                ? null
+                : new RecommendationModelEvaluationParametersContract(
+                    model.Parameters.InteractionWeighting,
+                    model.Parameters.ExcludePreviouslyPurchased,
+                    model.Parameters.Factors,
+                    model.Parameters.Regularization,
+                    model.Parameters.Iterations,
+                    model.Parameters.Alpha,
+                    model.Parameters.RandomSeed));
     }
 }

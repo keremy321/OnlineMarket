@@ -9,13 +9,16 @@ from .als import (
     find_personalized,
 )
 from .artifacts import ArtifactStore
-from .config import AlsSettings
+from .config import AlsSettings, EvaluationSettings
 from .contracts import (
     ArtifactMetadata,
+    ModelEvaluationRequest,
+    ModelEvaluationResponse,
     ModelTrainingRequest,
     PersonalizedRecommendationItem,
     SimilarProductItem,
 )
+from .evaluation import EvaluationReportWriter, evaluate_request
 from .model import TrainedModel, find_similar, train_model
 
 
@@ -27,17 +30,27 @@ class TrainingAlreadyInProgressError(RuntimeError):
     pass
 
 
+class EvaluationAlreadyInProgressError(RuntimeError):
+    pass
+
+
 class RecommendationModelService:
     def __init__(
         self,
         artifact_store: ArtifactStore,
         als_settings: AlsSettings | None = None,
+        evaluation_settings: EvaluationSettings | None = None,
     ) -> None:
         self._artifact_store = artifact_store
         self._als_settings = als_settings or AlsSettings()
+        self._evaluation_settings = evaluation_settings or EvaluationSettings()
+        self._evaluation_report_writer = EvaluationReportWriter(
+            self._evaluation_settings.output_directory
+        )
         self._model: TrainedModel | None = None
         self._state_lock = threading.Lock()
         self._training_lock = threading.Lock()
+        self._evaluation_lock = threading.Lock()
 
     def load_latest_valid(self) -> bool:
         model = self._artifact_store.load_latest_valid()
@@ -112,3 +125,27 @@ class RecommendationModelService:
             PERSONALIZED_STRATEGY,
             recommendations,
         )
+
+    def evaluate(self, request: ModelEvaluationRequest) -> ModelEvaluationResponse:
+        if not self._evaluation_lock.acquire(blocking=False):
+            raise EvaluationAlreadyInProgressError
+        try:
+            response = evaluate_request(
+                request,
+                als_settings=self._als_settings,
+                evaluation_settings=self._evaluation_settings,
+            )
+            self._evaluation_report_writer.publish(
+                response,
+                subject_ids=tuple(
+                    sorted(
+                        {
+                            interaction.subjectId
+                            for interaction in request.interactions
+                        }
+                    )
+                ),
+            )
+            return response
+        finally:
+            self._evaluation_lock.release()

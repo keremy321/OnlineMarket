@@ -688,6 +688,11 @@ sets. The loader continues accepting schema-v1 TF-IDF-only joblib artifacts.
 Every temporary artifact is deserialized and dimension-validated before its
 atomic rename and in-memory activation.
 
+The SubjectId mapping and purchase-history sets are pseudonymous, linkable
+model data. Artifacts must never contain the direct market CustomerId, the
+derivation key, a customer-to-subject mapping, or secrets, and access to the
+artifact volume must be restricted accordingly.
+
 Do not overwrite the active model in place.
 
 ---
@@ -701,6 +706,20 @@ Older orders → training
 Newest orders → validation/test
 ```
 
+The deterministic MVP groups by opaque SubjectId, orders each subject's
+history by `(OccurredAtUtc, OrderId)`, holds out the configured newest order(s),
+and trains only from strictly older orders. Subjects without enough history,
+usable training interactions, or candidate test labels are excluded with
+explicit aggregate reason counts. Previously purchased products are excluded
+from candidates when configured.
+
+The MVP evaluates Popularity and implicit ALS only. TF-IDF Similar Products and
+frequently-bought-together use different query/label protocols and therefore
+must be reported as `NotEvaluated` with explicit reasons rather than assigned
+fabricated personalized-ranking metrics. Evaluation trains isolated in-memory
+models, does not activate or overwrite the serving artifact, and atomically
+publishes aggregate JSON and Markdown reports.
+
 Required metrics:
 
 - Precision@5
@@ -713,6 +732,16 @@ Required metrics:
 - Training duration
 - Average inference latency
 - P95 inference latency
+
+For this MVP, Precision@K is hits divided by K, Recall@K is hits divided by the
+number of held-out candidate labels, HitRate@K is one when at least one label is
+hit, and NDCG@K uses binary relevance with ideal DCG truncated to the smaller
+of K and the label count. Metrics are macro-averaged across eligible subjects.
+Catalogue coverage is the distinct recommended candidate products divided by
+the candidate catalogue size. ALS reports both known-model coverage and
+coverage including its deterministic Popularity fallback. Training duration,
+average latency, and nearest-rank P95 latency are measured values and are the
+only intentionally runtime-dependent report fields.
 
 Models to compare:
 

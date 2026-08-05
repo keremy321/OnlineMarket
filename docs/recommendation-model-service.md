@@ -35,6 +35,7 @@ Configure `Recommendation.Api` with environment variables or User Secrets:
 Services__RecommendationModelService__BaseAddress=http://127.0.0.1:8085
 Services__RecommendationModelService__ApiKey=<LOCAL_ONLY_SECRET>
 Services__RecommendationModelService__Timeout=00:00:03
+Services__RecommendationModelService__EvaluationTimeout=00:02:00
 RecommendationSubject__Key=<AT_LEAST_32_BYTE_LOCAL_SECRET>
 RecommendationSubject__Version=v1
 ```
@@ -54,6 +55,13 @@ RECOMMENDATION_ALS_MAXIMUM_LIMIT=50
 RECOMMENDATION_ALS_MINIMUM_SUBJECTS=2
 RECOMMENDATION_ALS_MINIMUM_PRODUCTS=2
 RECOMMENDATION_ALS_MINIMUM_INTERACTIONS=3
+RECOMMENDATION_EVALUATION_K=5
+RECOMMENDATION_EVALUATION_MINIMUM_HISTORICAL_ORDERS=2
+RECOMMENDATION_EVALUATION_HOLDOUT_ORDER_COUNT=1
+RECOMMENDATION_EVALUATION_EXCLUDE_PREVIOUSLY_PURCHASED=true
+RECOMMENDATION_EVALUATION_RANDOM_SEED=42
+RECOMMENDATION_EVALUATION_OUTPUT_DIRECTORY=evaluation-reports
+RECOMMENDATION_EVALUATION_MAXIMUM_SUBJECTS=0
 ```
 
 Never put a real key in `appsettings*.json`, Compose source, logs, issues, or
@@ -80,9 +88,25 @@ Personalized inference uses
 the pseudonymous subject internally and calls
 `POST /api/v1/models/personalized`.
 
+Authenticated `POST /api/v1/recommendations/evaluate-models` exports a
+purpose-limited chronological snapshot and calls Python
+`POST /api/v1/models/evaluate`. It evaluates Popularity and ALS on a
+per-subject newest-order holdout, reports TF-IDF and frequently-bought-together
+as `NotEvaluated`, and returns only aggregate metrics and report identifiers.
+JSON and Markdown reports are atomically written to the separate
+`recommendation_evaluation_reports` volume. Evaluation uses its longer
+`EvaluationTimeout`, performs no automatic retry, does not affect the inference
+circuit, and never activates or mutates the current serving artifact.
+
 The C# façade makes no automatic HTTP retries. Three consecutive failures open
 a 30-second circuit, preventing retry storms. Timeout, connection, unavailable
 model, and invalid response outcomes use the deterministic C# content fallback
 for user-facing inference.
 Personalized failures, cold-start subjects, and TF-IDF-only artifacts use the
 deterministic C# category/brand/popularity fallback through the same circuit.
+
+Artifact schema v2 necessarily persists deterministic SubjectId mappings and
+purchased-product sets for ALS inference. Those values are pseudonymous and
+linkable; the artifact volume requires restricted access. Direct CustomerId,
+the derivation key, customer-to-subject mappings, connection strings, and API
+keys remain forbidden in artifacts and evaluation reports.

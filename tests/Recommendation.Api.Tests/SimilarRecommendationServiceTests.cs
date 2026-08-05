@@ -200,5 +200,13 @@ public sealed class SimilarRecommendationServiceTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<RecommendationModelClientResult<
+            RecommendationModelEvaluationClientResponse>> EvaluateAsync(
+                RecommendationModelEvaluationRequest request,
+                CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 }

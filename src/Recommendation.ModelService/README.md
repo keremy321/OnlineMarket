@@ -35,6 +35,11 @@ artifacts remain loadable and continue serving Similar Products. The ALS
 implementation uses pinned `implicit` 0.7.3 on Python 3.13.7; the slim container
 installs only the required `libgomp1` OpenMP runtime.
 
+The v2 SubjectId mapping and purchase-history sets are pseudonymous, linkable
+model data. The artifact volume therefore requires restricted access. Direct
+CustomerId, the derivation key, customer-to-subject mappings, connection
+strings, and API keys remain forbidden in artifacts and reports.
+
 ALS settings use `RECOMMENDATION_ALS_FACTORS`,
 `RECOMMENDATION_ALS_REGULARIZATION`, `RECOMMENDATION_ALS_ITERATIONS`,
 `RECOMMENDATION_ALS_ALPHA`, `RECOMMENDATION_ALS_RANDOM_SEED`,
@@ -42,6 +47,18 @@ ALS settings use `RECOMMENDATION_ALS_FACTORS`,
 `RECOMMENDATION_ALS_MAXIMUM_LIMIT`. The minimum-subject, product, and
 aggregated-interaction thresholds are configurable with the corresponding
 `RECOMMENDATION_ALS_MINIMUM_*` variables. Invalid values fail startup.
+
+`POST /api/v1/models/evaluate` performs deterministic per-subject temporal
+evaluation without reading or changing the active artifact. It evaluates
+Popularity and implicit ALS, reports TF-IDF and frequently-bought-together as
+`NotEvaluated`, and atomically writes aggregate JSON and Markdown reports under
+`evaluation-reports/`. Configure it with `RECOMMENDATION_EVALUATION_K`,
+`RECOMMENDATION_EVALUATION_MINIMUM_HISTORICAL_ORDERS`,
+`RECOMMENDATION_EVALUATION_HOLDOUT_ORDER_COUNT`,
+`RECOMMENDATION_EVALUATION_EXCLUDE_PREVIOUSLY_PURCHASED`,
+`RECOMMENDATION_EVALUATION_RANDOM_SEED`,
+`RECOMMENDATION_EVALUATION_OUTPUT_DIRECTORY`, and
+`RECOMMENDATION_EVALUATION_MAXIMUM_SUBJECTS` (`0` means no cap).
 
 ## Verification
 

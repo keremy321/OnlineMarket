@@ -102,3 +102,88 @@ public sealed record RecommendationModelAlsParametersContract(
     int Iterations,
     decimal Alpha,
     int RandomSeed);
+
+public sealed record RecommendationModelEvaluationResponse(
+    string Status,
+    string EvaluationVersion,
+    DateTime EvaluatedAtUtc,
+    string InputHash,
+    RecommendationModelEvaluationDatasetContract Dataset,
+    RecommendationModelEvaluationSplitContract Split,
+    RecommendationModelEvaluationExcludedDataContract ExcludedData,
+    RecommendationModelEvaluationModelsContract Models,
+    string ReportIdentifier,
+    RecommendationModelEvaluationReportFilesContract Reports,
+    IReadOnlyList<string> Limitations);
+
+public sealed record RecommendationModelEvaluationDatasetContract(
+    int ProductCount,
+    int CandidateProductCount,
+    int SubjectCount,
+    int OrderCount,
+    int InteractionCount);
+
+public sealed record RecommendationModelEvaluationSplitContract(
+    string Strategy,
+    string Description,
+    int K,
+    int MinimumHistoricalOrdersPerSubject,
+    int HoldoutOrderCount,
+    bool ExcludePreviouslyPurchased,
+    int RandomSeed,
+    int EligibleSubjectCount,
+    int ExcludedSubjectCount,
+    int TrainingOrderCount,
+    int TestOrderCount,
+    int TrainingInteractionCount,
+    int TestInteractionCount);
+
+public sealed record RecommendationModelEvaluationExcludedDataContract(
+    int InsufficientHistorySubjectCount,
+    int NoUsableTrainingHistorySubjectCount,
+    int NoUsableTestInteractionsSubjectCount,
+    int DevelopmentCapSubjectCount,
+    int ProductsAbsentFromTrainingInteractions,
+    int UnknownProductInteractionCount,
+    int PopularityFallbackSubjectCount);
+
+public sealed record RecommendationModelEvaluationModelsContract(
+    RecommendationModelEvaluationModelContract Popularity,
+    RecommendationModelEvaluationModelContract Als,
+    RecommendationModelEvaluationModelContract Tfidf,
+    RecommendationModelEvaluationModelContract Fbt);
+
+public sealed record RecommendationModelEvaluationModelContract(
+    string Status,
+    string? Reason,
+    RecommendationModelEvaluationMetricsContract? Metrics,
+    RecommendationModelEvaluationParametersContract? Parameters);
+
+public sealed record RecommendationModelEvaluationMetricsContract(
+    decimal PrecisionAtK,
+    decimal RecallAtK,
+    decimal HitRateAtK,
+    decimal NdcgAtK,
+    decimal CatalogueCoverage,
+    decimal KnownSubjectCatalogueCoverage,
+    decimal CatalogueCoverageIncludingFallback,
+    int EligibleSubjectCount,
+    int TrainingInteractionCount,
+    int TestInteractionCount,
+    decimal TrainingDurationMilliseconds,
+    decimal AverageInferenceLatencyMilliseconds,
+    decimal P95InferenceLatencyMilliseconds,
+    int FallbackSubjectCount);
+
+public sealed record RecommendationModelEvaluationParametersContract(
+    string InteractionWeighting,
+    bool ExcludePreviouslyPurchased,
+    int? Factors,
+    decimal? Regularization,
+    int? Iterations,
+    decimal? Alpha,
+    int? RandomSeed);
+
+public sealed record RecommendationModelEvaluationReportFilesContract(
+    string JsonFile,
+    string MarkdownFile);

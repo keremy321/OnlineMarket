@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
 from typing import Annotated
@@ -228,6 +228,141 @@ class PersonalizedRecommendationsResponse(StrictContract):
     modelVersion: str
     strategy: str
     recommendations: list[PersonalizedRecommendationItem]
+
+
+class EvaluationOrderInteraction(OrderProductInteraction):
+    occurredAtUtc: datetime
+
+    @field_validator("occurredAtUtc")
+    @classmethod
+    def occurred_at_must_be_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("occurredAtUtc must be an offset-aware UTC timestamp.")
+        return value
+
+
+class ModelEvaluationRequest(StrictContract):
+    evaluationVersion: Annotated[
+        NonBlankText,
+        StringConstraints(max_length=100, pattern=r"^[A-Za-z0-9._-]+$"),
+    ]
+    catalogueProductIds: list[UUID] = Field(max_length=50_000)
+    candidateProductIds: list[UUID] = Field(max_length=50_000)
+    interactions: list[EvaluationOrderInteraction] = Field(
+        default_factory=list,
+        max_length=100_000,
+    )
+
+    @model_validator(mode="after")
+    def evaluation_ids_must_be_valid(self) -> ModelEvaluationRequest:
+        if any(product_id.int == 0 for product_id in self.catalogueProductIds):
+            raise ValueError("Catalogue product IDs must not be empty UUIDs.")
+        if any(product_id.int == 0 for product_id in self.candidateProductIds):
+            raise ValueError("Candidate product IDs must not be empty UUIDs.")
+        if len(self.catalogueProductIds) != len(set(self.catalogueProductIds)):
+            raise ValueError("Catalogue product IDs must be unique.")
+        if len(self.candidateProductIds) != len(set(self.candidateProductIds)):
+            raise ValueError("Candidate product IDs must be unique.")
+        if not set(self.candidateProductIds).issubset(self.catalogueProductIds):
+            raise ValueError("Candidate products must belong to the catalogue.")
+        order_ids = [interaction.orderId for interaction in self.interactions]
+        if len(order_ids) != len(set(order_ids)):
+            raise ValueError("Evaluation order IDs must be unique.")
+        return self
+
+
+class EvaluationDatasetCounts(StrictContract):
+    productCount: int = Field(ge=0)
+    candidateProductCount: int = Field(ge=0)
+    subjectCount: int = Field(ge=0)
+    orderCount: int = Field(ge=0)
+    interactionCount: int = Field(ge=0)
+
+
+class EvaluationSplitSummary(StrictContract):
+    strategy: str
+    description: str
+    k: int = Field(gt=0)
+    minimumHistoricalOrdersPerSubject: int = Field(gt=0)
+    holdoutOrderCount: int = Field(gt=0)
+    excludePreviouslyPurchased: bool
+    randomSeed: int = Field(ge=0)
+    eligibleSubjectCount: int = Field(ge=0)
+    excludedSubjectCount: int = Field(ge=0)
+    trainingOrderCount: int = Field(ge=0)
+    testOrderCount: int = Field(ge=0)
+    trainingInteractionCount: int = Field(ge=0)
+    testInteractionCount: int = Field(ge=0)
+
+
+class EvaluationExcludedDataCounts(StrictContract):
+    insufficientHistorySubjectCount: int = Field(ge=0)
+    noUsableTrainingHistorySubjectCount: int = Field(ge=0)
+    noUsableTestInteractionsSubjectCount: int = Field(ge=0)
+    developmentCapSubjectCount: int = Field(ge=0)
+    productsAbsentFromTrainingInteractions: int = Field(ge=0)
+    unknownProductInteractionCount: int = Field(ge=0)
+    popularityFallbackSubjectCount: int = Field(ge=0)
+
+
+class EvaluationModelMetrics(StrictContract):
+    precisionAtK: float = Field(ge=0, le=1)
+    recallAtK: float = Field(ge=0, le=1)
+    hitRateAtK: float = Field(ge=0, le=1)
+    ndcgAtK: float = Field(ge=0, le=1)
+    catalogueCoverage: float = Field(ge=0, le=1)
+    knownSubjectCatalogueCoverage: float = Field(ge=0, le=1)
+    catalogueCoverageIncludingFallback: float = Field(ge=0, le=1)
+    eligibleSubjectCount: int = Field(ge=0)
+    trainingInteractionCount: int = Field(ge=0)
+    testInteractionCount: int = Field(ge=0)
+    trainingDurationMilliseconds: float = Field(ge=0)
+    averageInferenceLatencyMilliseconds: float = Field(ge=0)
+    p95InferenceLatencyMilliseconds: float = Field(ge=0)
+    fallbackSubjectCount: int = Field(ge=0)
+
+
+class EvaluationModelParameters(StrictContract):
+    interactionWeighting: str
+    excludePreviouslyPurchased: bool
+    factors: int | None = Field(default=None, gt=0)
+    regularization: float | None = Field(default=None, gt=0)
+    iterations: int | None = Field(default=None, gt=0)
+    alpha: float | None = Field(default=None, gt=0)
+    randomSeed: int | None = Field(default=None, ge=0)
+
+
+class EvaluationModelResult(StrictContract):
+    status: str
+    reason: str | None = None
+    metrics: EvaluationModelMetrics | None = None
+    parameters: EvaluationModelParameters | None = None
+
+
+class EvaluationModels(StrictContract):
+    popularity: EvaluationModelResult
+    als: EvaluationModelResult
+    tfidf: EvaluationModelResult
+    fbt: EvaluationModelResult
+
+
+class EvaluationReportFiles(StrictContract):
+    jsonFile: str
+    markdownFile: str
+
+
+class ModelEvaluationResponse(StrictContract):
+    status: str
+    evaluationVersion: str
+    evaluatedAtUtc: datetime
+    inputHash: str
+    dataset: EvaluationDatasetCounts
+    split: EvaluationSplitSummary
+    excludedData: EvaluationExcludedDataCounts
+    models: EvaluationModels
+    reportIdentifier: str
+    reports: EvaluationReportFiles
+    limitations: list[str]
 
 
 class ApiErrorResponse(StrictContract):

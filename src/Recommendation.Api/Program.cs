@@ -62,6 +62,12 @@ builder.Services.AddScoped<
     IRecommendationModelOrchestrationService,
     RecommendationModelOrchestrationService>();
 builder.Services.AddScoped<
+    IModelEvaluationSnapshotStore,
+    SqlServerModelEvaluationSnapshotStore>();
+builder.Services.AddScoped<
+    IRecommendationModelEvaluationService,
+    RecommendationModelEvaluationService>();
+builder.Services.AddScoped<
     ISimilarProductStore,
     SqlServerSimilarProductStore>();
 builder.Services.AddScoped<
@@ -127,7 +133,7 @@ builder.Services.AddHttpClient<
                     RecommendationModelServiceOptions>>()
             .Value;
         client.BaseAddress = new Uri(options.BaseAddress, UriKind.Absolute);
-        client.Timeout = options.Timeout;
+        client.Timeout = Timeout.InfiniteTimeSpan;
     });
 builder.Services
     .AddOptions<CartCompletionRecommendationOptions>()
