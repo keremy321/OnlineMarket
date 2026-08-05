@@ -38,8 +38,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings.validate()
     model_service = RecommendationModelService(
         ArtifactStore(resolved_settings.artifact_directory),
-        resolved_settings.als,
-        resolved_settings.evaluation,
+        als_settings=resolved_settings.als,
+        hybrid_settings=resolved_settings.hybrid,
+        evaluation_settings=resolved_settings.evaluation,
     )
 
     @asynccontextmanager
@@ -186,13 +187,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def similar(
         request: SimilarProductsRequest,
     ) -> SimilarProductsResponse:
-        model_version, items = await run_in_threadpool(
+        model_version, strategy, items = await run_in_threadpool(
             model_service.similar,
             request.productId,
             request.limit,
         )
         return SimilarProductsResponse(
             modelVersion=model_version,
+            strategy=strategy,
             sourceProductId=request.productId,
             items=items,
         )
@@ -210,6 +212,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request.subjectId,
             request.limit,
             exclude_previously_purchased=(request.excludePreviouslyPurchased),
+            strategy=request.strategy,
         )
         return PersonalizedRecommendationsResponse(
             modelVersion=model_version,

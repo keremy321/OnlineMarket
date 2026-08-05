@@ -45,8 +45,8 @@ key must not appear in appsettings files, Compose source, database rows, model
 artifacts, logs, exception messages, tickets, or browser-visible content.
 Python never receives the key or the market CustomerId.
 
-Artifact schema v2 persists deterministic SubjectId mappings and
-purchased-product sets so ALS can serve known subjects and exclude prior
+Artifact schema v3 preserves schema-v2 deterministic SubjectId mappings and
+purchased-product sets so ALS and Hybrid can serve known subjects and exclude prior
 purchases. This is pseudonymous, linkable model data rather than anonymous
 data. The artifact volume must be access-restricted and must never contain the
 direct CustomerId, derivation key, or a customer-to-subject lookup. Offline

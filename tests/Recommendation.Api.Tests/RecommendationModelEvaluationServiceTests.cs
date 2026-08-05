@@ -2,6 +2,7 @@ using System.Text.Json;
 using Recommendation.Api.Application.Interfaces;
 using Recommendation.Api.Application.Models;
 using Recommendation.Api.Application.Services;
+using Recommendation.Api.Domain.Enums;
 
 namespace Recommendation.Api.Tests;
 
@@ -30,6 +31,10 @@ public sealed class RecommendationModelEvaluationServiceTests
             ]);
         var snapshot = new ModelEvaluationSnapshot(
             [
+                Product(RecommendationModelEvaluationTestData.SecondProductId),
+                Product(RecommendationModelEvaluationTestData.FirstProductId)
+            ],
+            [
                 RecommendationModelEvaluationTestData.SecondProductId,
                 RecommendationModelEvaluationTestData.FirstProductId
             ],
@@ -53,6 +58,9 @@ public sealed class RecommendationModelEvaluationServiceTests
             ],
             request.CatalogueProductIds);
         Assert.Equal(
+            request.CatalogueProductIds,
+            request.Products.Select(product => product.ProductId));
+        Assert.Equal(
             [earlierOrder.OrderId, laterOrder.OrderId],
             request.Interactions.Select(interaction => interaction.OrderId));
         Assert.All(
@@ -69,6 +77,21 @@ public sealed class RecommendationModelEvaluationServiceTests
             "customerId",
             serialized,
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static ModelProductTrainingSnapshot Product(Guid productId)
+    {
+        return new ModelProductTrainingSnapshot(
+            productId,
+            Guid.Parse("10000000-0000-0000-0000-000000000001"),
+            Guid.Parse("20000000-0000-0000-0000-000000000001"),
+            "Product",
+            "Evaluation product",
+            UnitType.Piece,
+            1m,
+            10m,
+            true,
+            true);
     }
 
     private sealed class StubStore(ModelEvaluationSnapshot snapshot)

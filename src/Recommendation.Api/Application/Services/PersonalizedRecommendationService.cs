@@ -14,6 +14,7 @@ public sealed class PersonalizedRecommendationService(
     : IPersonalizedRecommendationService
 {
     private const string AlsStrategy = "implicit_als";
+    private const string HybridStrategy = "HybridPersonalized";
 
     public async Task<IReadOnlyList<PersonalizedRecommendationItem>> GetAsync(
         Guid customerId,
@@ -53,14 +54,12 @@ public sealed class PersonalizedRecommendationService(
             new RecommendationModelPersonalizedRequest(
                 subjectId,
                 limit,
-                excludePreviouslyPurchased),
+                excludePreviouslyPurchased,
+                configured.ModelStrategy.ToString()),
             cancellationToken);
         if (modelResult.Outcome == RecommendationModelClientOutcome.Succeeded
             && modelResult.Value is not null
-            && string.Equals(
-                modelResult.Value.Strategy,
-                AlsStrategy,
-                StringComparison.Ordinal))
+            && modelResult.Value.Strategy is AlsStrategy or HybridStrategy)
         {
             var mapped = MapModelResults(
                 modelResult.Value,
@@ -166,14 +165,24 @@ public sealed class PersonalizedRecommendationService(
                 || !purchasedProductIds.Contains(product.ProductId))
             .Select(product => product.ProductId)
             .ToHashSet();
+        var rankingSource = response.Strategy == HybridStrategy
+            ? PersonalizedRankingSource.PythonHybrid
+            : PersonalizedRankingSource.PythonImplicitAls;
         return response.Recommendations
             .Where(item => availableProductIds.Contains(item.ProductId))
             .Select(item => new PersonalizedRecommendationItem(
                 item.ProductId,
                 item.Score,
                 item.Confidence,
-                PersonalizedRankingSource.PythonImplicitAls,
-                response.ModelVersion))
+                rankingSource,
+                response.ModelVersion,
+                item.ReasonCode,
+                item.ReasonText,
+                item.AlsScore,
+                item.ContentAffinityScore,
+                item.AssociationScore,
+                item.PopularityScore,
+                item.FinalScore))
             .DistinctBy(item => item.ProductId)
             .OrderByDescending(item => item.Score)
             .ThenBy(item => item.ProductId)

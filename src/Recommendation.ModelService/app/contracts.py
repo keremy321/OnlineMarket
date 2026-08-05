@@ -169,6 +169,9 @@ class ModelComponentStatus(StrictContract):
 class ModelComponentStatuses(StrictContract):
     tfidf: ModelComponentStatus
     als: ModelComponentStatus
+    popularity: ModelComponentStatus | None = None
+    association: ModelComponentStatus | None = None
+    hybrid: ModelComponentStatus | None = None
 
 
 class AlsParameters(StrictContract):
@@ -177,6 +180,28 @@ class AlsParameters(StrictContract):
     iterations: int = Field(gt=0)
     alpha: float = Field(gt=0)
     randomSeed: int = Field(ge=0)
+
+
+class PersonalizedHybridWeightsParameters(StrictContract):
+    als: float = Field(ge=0, le=1)
+    contentAffinity: float = Field(ge=0, le=1)
+    association: float = Field(ge=0, le=1)
+    popularity: float = Field(ge=0, le=1)
+
+
+class SimilarHybridWeightsParameters(StrictContract):
+    contentSimilarity: float = Field(ge=0, le=1)
+    coPurchaseSimilarity: float = Field(ge=0, le=1)
+    popularity: float = Field(ge=0, le=1)
+
+
+class HybridParameters(StrictContract):
+    personalizedWeights: PersonalizedHybridWeightsParameters
+    similarWeights: SimilarHybridWeightsParameters
+    candidatePoolMultiplier: int = Field(gt=0)
+    candidatePoolCap: int = Field(gt=0)
+    contentAffinityAggregation: str
+    missingComponentPolicy: str
 
 
 class ArtifactMetadata(StrictContract):
@@ -191,6 +216,7 @@ class ArtifactMetadata(StrictContract):
     algorithmComponents: list[str] = Field(default_factory=list)
     components: ModelComponentStatuses | None = None
     alsParameters: AlsParameters | None = None
+    hybridParameters: HybridParameters | None = None
     libraryVersions: dict[str, str]
 
 
@@ -202,18 +228,30 @@ class ModelTrainingResponse(StrictContract):
 class SimilarProductItem(StrictContract):
     productId: UUID
     tfidfScore: float = Field(ge=0, le=1)
+    coPurchaseScore: float = Field(default=0, ge=0, le=1)
+    popularityScore: float = Field(default=0, ge=0, le=1)
+    finalScore: float = Field(ge=0, le=1)
+    reasonCode: str
+    reasonText: str
 
 
 class SimilarProductsResponse(StrictContract):
     modelVersion: str
+    strategy: str
     sourceProductId: UUID
     items: list[SimilarProductItem]
+
+
+class PersonalizedModelStrategy(StrEnum):
+    ALS = "Als"
+    HYBRID = "Hybrid"
 
 
 class PersonalizedRecommendationsRequest(StrictContract):
     subjectId: SubjectId
     limit: int | None = Field(default=None, ge=1, le=1_000)
     excludePreviouslyPurchased: bool = True
+    strategy: PersonalizedModelStrategy = PersonalizedModelStrategy.ALS
 
 
 class PersonalizedRecommendationItem(StrictContract):
@@ -222,6 +260,11 @@ class PersonalizedRecommendationItem(StrictContract):
     confidence: float | None = Field(default=None, ge=0, le=1)
     reasonCode: str
     reasonText: str
+    alsScore: float | None = Field(default=None, ge=0, le=1)
+    contentAffinityScore: float | None = Field(default=None, ge=0, le=1)
+    associationScore: float | None = Field(default=None, ge=0, le=1)
+    popularityScore: float | None = Field(default=None, ge=0, le=1)
+    finalScore: float | None = Field(default=None, ge=0, le=1)
 
 
 class PersonalizedRecommendationsResponse(StrictContract):
@@ -248,6 +291,7 @@ class ModelEvaluationRequest(StrictContract):
     ]
     catalogueProductIds: list[UUID] = Field(max_length=50_000)
     candidateProductIds: list[UUID] = Field(max_length=50_000)
+    products: list[ProductTrainingSnapshot] = Field(max_length=50_000)
     interactions: list[EvaluationOrderInteraction] = Field(
         default_factory=list,
         max_length=100_000,
@@ -265,6 +309,22 @@ class ModelEvaluationRequest(StrictContract):
             raise ValueError("Candidate product IDs must be unique.")
         if not set(self.candidateProductIds).issubset(self.catalogueProductIds):
             raise ValueError("Candidate products must belong to the catalogue.")
+        product_ids = [product.productId for product in self.products]
+        if len(product_ids) != len(set(product_ids)):
+            raise ValueError("Evaluation product IDs must be unique.")
+        if set(product_ids) != set(self.catalogueProductIds):
+            raise ValueError(
+                "Evaluation product snapshots must match the catalogue IDs."
+            )
+        available_product_ids = {
+            product.productId
+            for product in self.products
+            if product.isActive and product.isInStock
+        }
+        if set(self.candidateProductIds) != available_product_ids:
+            raise ValueError(
+                "Evaluation candidates must match active, in-stock products."
+            )
         order_ids = [interaction.orderId for interaction in self.interactions]
         if len(order_ids) != len(set(order_ids)):
             raise ValueError("Evaluation order IDs must be unique.")
@@ -330,6 +390,7 @@ class EvaluationModelParameters(StrictContract):
     iterations: int | None = Field(default=None, gt=0)
     alpha: float | None = Field(default=None, gt=0)
     randomSeed: int | None = Field(default=None, ge=0)
+    hybrid: HybridParameters | None = None
 
 
 class EvaluationModelResult(StrictContract):
@@ -342,8 +403,17 @@ class EvaluationModelResult(StrictContract):
 class EvaluationModels(StrictContract):
     popularity: EvaluationModelResult
     als: EvaluationModelResult
+    hybrid: EvaluationModelResult
     tfidf: EvaluationModelResult
     fbt: EvaluationModelResult
+
+
+class EvaluationComparison(StrictContract):
+    hybridMinusAlsPrecisionAt5: float
+    hybridMinusAlsRecallAt5: float
+    hybridMinusAlsHitRateAt5: float
+    hybridMinusAlsNdcgAt5: float
+    hybridMinusAlsCoverage: float
 
 
 class EvaluationReportFiles(StrictContract):
@@ -360,6 +430,7 @@ class ModelEvaluationResponse(StrictContract):
     split: EvaluationSplitSummary
     excludedData: EvaluationExcludedDataCounts
     models: EvaluationModels
+    comparison: EvaluationComparison | None
     reportIdentifier: str
     reports: EvaluationReportFiles
     limitations: list[str]

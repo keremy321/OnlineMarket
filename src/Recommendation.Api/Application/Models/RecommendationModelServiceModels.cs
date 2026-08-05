@@ -70,11 +70,15 @@ public sealed record RecommendationModelMetadataResponse(
     IReadOnlyList<string> AlgorithmComponents,
     RecommendationModelComponentStatusesResponse Components,
     RecommendationModelAlsParametersResponse AlsParameters,
+    RecommendationModelHybridParametersResponse? HybridParameters,
     IReadOnlyDictionary<string, string> LibraryVersions);
 
 public sealed record RecommendationModelComponentStatusesResponse(
     RecommendationModelComponentStatusResponse Tfidf,
-    RecommendationModelComponentStatusResponse Als);
+    RecommendationModelComponentStatusResponse Als,
+    RecommendationModelComponentStatusResponse? Popularity,
+    RecommendationModelComponentStatusResponse? Association,
+    RecommendationModelComponentStatusResponse? Hybrid);
 
 public sealed record RecommendationModelComponentStatusResponse(
     string Status,
@@ -87,23 +91,49 @@ public sealed record RecommendationModelAlsParametersResponse(
     decimal Alpha,
     int RandomSeed);
 
+public sealed record RecommendationModelHybridParametersResponse(
+    RecommendationModelPersonalizedHybridWeightsResponse PersonalizedWeights,
+    RecommendationModelSimilarHybridWeightsResponse SimilarWeights,
+    int CandidatePoolMultiplier,
+    int CandidatePoolCap,
+    string ContentAffinityAggregation,
+    string MissingComponentPolicy);
+
+public sealed record RecommendationModelPersonalizedHybridWeightsResponse(
+    decimal Als,
+    decimal ContentAffinity,
+    decimal Association,
+    decimal Popularity);
+
+public sealed record RecommendationModelSimilarHybridWeightsResponse(
+    decimal ContentSimilarity,
+    decimal CoPurchaseSimilarity,
+    decimal Popularity);
+
 public sealed record RecommendationModelSimilarRequest(
     Guid ProductId,
     int Limit);
 
 public sealed record RecommendationModelSimilarClientResponse(
     string ModelVersion,
+    string Strategy,
     Guid SourceProductId,
     IReadOnlyList<RecommendationModelSimilarItemResponse> Items);
 
 public sealed record RecommendationModelSimilarItemResponse(
     Guid ProductId,
-    decimal TfidfScore);
+    decimal TfidfScore,
+    decimal CoPurchaseScore,
+    decimal PopularityScore,
+    decimal FinalScore,
+    string ReasonCode,
+    string ReasonText);
 
 public sealed record RecommendationModelPersonalizedRequest(
     string SubjectId,
     int Limit,
-    bool ExcludePreviouslyPurchased);
+    bool ExcludePreviouslyPurchased,
+    string Strategy = "Als");
 
 public sealed record RecommendationModelPersonalizedClientResponse(
     string ModelVersion,
@@ -116,7 +146,12 @@ public sealed record RecommendationModelPersonalizedItemResponse(
     decimal Score,
     decimal? Confidence,
     string ReasonCode,
-    string ReasonText);
+    string ReasonText,
+    decimal? AlsScore = null,
+    decimal? ContentAffinityScore = null,
+    decimal? AssociationScore = null,
+    decimal? PopularityScore = null,
+    decimal? FinalScore = null);
 
 public enum RecommendationModelClientOutcome
 {

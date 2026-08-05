@@ -143,13 +143,17 @@ public sealed class RecommendationsController(
                 new RecommendationModelComponentStatusContract(
                     result.Metadata.Components.Als.Status,
                     result.Metadata.Components.Als
-                        .TrainingDurationMilliseconds)),
+                        .TrainingDurationMilliseconds),
+                MapComponentStatus(result.Metadata.Components.Popularity),
+                MapComponentStatus(result.Metadata.Components.Association),
+                MapComponentStatus(result.Metadata.Components.Hybrid)),
             new RecommendationModelAlsParametersContract(
                 result.Metadata.AlsParameters.Factors,
                 result.Metadata.AlsParameters.Regularization,
                 result.Metadata.AlsParameters.Iterations,
                 result.Metadata.AlsParameters.Alpha,
-            result.Metadata.AlsParameters.RandomSeed)));
+                result.Metadata.AlsParameters.RandomSeed),
+            MapHybridParameters(result.Metadata.HybridParameters)));
     }
 
     [HttpPost("evaluate-models")]
@@ -280,40 +284,49 @@ public sealed class RecommendationsController(
             item.ProductId,
             item.Score,
             nameof(RecommendationType.Similar),
-            item.RankingSource == SimilarRankingSource.PythonTfidf
-                ? "Similarity.TfidfContent"
-                : "Similarity.DeterministicFallback",
-            item.RankingSource == SimilarRankingSource.PythonTfidf
-                ? "Similar product based on content features."
-                : "Similar product based on local content attributes.",
+            item.ReasonCode ?? (item.RankingSource
+                == SimilarRankingSource.PythonTfidf
+                    ? "Similarity.TfidfContent"
+                    : "Similarity.DeterministicFallback"),
+            item.ReasonText ?? (item.RankingSource
+                == SimilarRankingSource.PythonTfidf
+                    ? "Similar product based on content features."
+                    : "Similar product based on local content attributes."),
             new SimilarityMetricsResponse(
                 item.TfidfScore,
                 item.PopularityScore,
                 item.FrequentlyBoughtTogetherScore,
                 item.FallbackScore,
                 item.RankingSource.ToString(),
-                item.ModelVersion));
+                item.ModelVersion,
+                item.CoPurchaseScore));
     }
 
     private static PersonalizedRecommendationResponse
         MapPersonalizedRecommendation(PersonalizedRecommendationItem item)
     {
-        var python = item.RankingSource
-            == PersonalizedRankingSource.PythonImplicitAls;
+        var python = item.RankingSource is
+            PersonalizedRankingSource.PythonImplicitAls
+            or PersonalizedRankingSource.PythonHybrid;
         return new PersonalizedRecommendationResponse(
             item.ProductId,
             item.Score,
             nameof(RecommendationType.Personalized),
-            python
+            item.ReasonCode ?? (python
                 ? "Personalized.ImplicitAls"
-                : "Personalized.PreferenceFallback",
-            python
+                : "Personalized.PreferenceFallback"),
+            item.ReasonText ?? (python
                 ? "Recommended from pseudonymous purchase interactions."
-                : "Recommended from purchase preferences and popularity.",
+                : "Recommended from purchase preferences and popularity."),
             new PersonalizedMetricsResponse(
                 item.Confidence,
                 item.RankingSource.ToString(),
-                item.ModelVersion));
+                item.ModelVersion,
+                item.AlsScore,
+                item.ContentAffinityScore,
+                item.AssociationScore,
+                item.PopularityScore,
+                item.FinalScore));
     }
 
     private static RecommendationModelEvaluationResponse MapModelEvaluation(
@@ -355,13 +368,54 @@ public sealed class RecommendationsController(
             new RecommendationModelEvaluationModelsContract(
                 MapEvaluationModel(response.Models.Popularity),
                 MapEvaluationModel(response.Models.Als),
+                MapEvaluationModel(response.Models.Hybrid),
                 MapEvaluationModel(response.Models.Tfidf),
                 MapEvaluationModel(response.Models.Fbt)),
+            response.Comparison is null
+                ? null
+                : new RecommendationModelEvaluationComparisonContract(
+                    response.Comparison.HybridMinusAlsPrecisionAt5,
+                    response.Comparison.HybridMinusAlsRecallAt5,
+                    response.Comparison.HybridMinusAlsHitRateAt5,
+                    response.Comparison.HybridMinusAlsNdcgAt5,
+                    response.Comparison.HybridMinusAlsCoverage),
             response.ReportIdentifier,
             new RecommendationModelEvaluationReportFilesContract(
                 response.Reports.JsonFile,
                 response.Reports.MarkdownFile),
             response.Limitations);
+    }
+
+    private static RecommendationModelComponentStatusContract?
+        MapComponentStatus(RecommendationModelComponentStatusResponse? status)
+    {
+        return status is null
+            ? null
+            : new RecommendationModelComponentStatusContract(
+                status.Status,
+                status.TrainingDurationMilliseconds);
+    }
+
+    private static RecommendationModelHybridParametersContract?
+        MapHybridParameters(
+            RecommendationModelHybridParametersResponse? parameters)
+    {
+        return parameters is null
+            ? null
+            : new RecommendationModelHybridParametersContract(
+                new RecommendationModelPersonalizedHybridWeightsContract(
+                    parameters.PersonalizedWeights.Als,
+                    parameters.PersonalizedWeights.ContentAffinity,
+                    parameters.PersonalizedWeights.Association,
+                    parameters.PersonalizedWeights.Popularity),
+                new RecommendationModelSimilarHybridWeightsContract(
+                    parameters.SimilarWeights.ContentSimilarity,
+                    parameters.SimilarWeights.CoPurchaseSimilarity,
+                    parameters.SimilarWeights.Popularity),
+                parameters.CandidatePoolMultiplier,
+                parameters.CandidatePoolCap,
+                parameters.ContentAffinityAggregation,
+                parameters.MissingComponentPolicy);
     }
 
     private static RecommendationModelEvaluationModelContract
@@ -397,6 +451,7 @@ public sealed class RecommendationsController(
                     model.Parameters.Regularization,
                     model.Parameters.Iterations,
                     model.Parameters.Alpha,
-                    model.Parameters.RandomSeed));
+                    model.Parameters.RandomSeed,
+                    MapHybridParameters(model.Parameters.Hybrid)));
     }
 }

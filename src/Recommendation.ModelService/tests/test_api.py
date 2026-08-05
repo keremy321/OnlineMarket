@@ -189,16 +189,32 @@ def test_training_and_similarity_filter_and_order_deterministically(
     assert metadata["productCount"] == 5
     assert metadata["subjectCount"] == 1
     assert metadata["interactionCount"] == 2
-    assert metadata["algorithm"] == "tfidf-product-content-cosine-v1"
-    assert metadata["algorithmComponents"] == ["tfidf-product-content-cosine-v1"]
+    assert metadata["algorithm"] == (
+        "tfidf-product-content-cosine-v1+quantity-popularity-v1+"
+        "directional-copurchase-v1+deterministic-hybrid-ranker-v1"
+    )
+    assert metadata["algorithmComponents"] == [
+        "tfidf-product-content-cosine-v1",
+        "quantity-popularity-v1",
+        "directional-copurchase-v1",
+        "deterministic-hybrid-ranker-v1",
+    ]
     assert metadata["components"]["tfidf"]["status"] == "Succeeded"
     assert metadata["components"]["als"]["status"] == "InsufficientData"
+    assert metadata["components"]["hybrid"]["status"] == "Succeeded"
+    assert metadata["hybridParameters"]["personalizedWeights"] == {
+        "als": 0.5,
+        "contentAffinity": 0.2,
+        "association": 0.15,
+        "popularity": 0.15,
+    }
     assert metadata["alsParameters"]["randomSeed"] == 42
     assert len(metadata["inputHash"]) == 64
     assert "scikit-learn" in metadata["libraryVersions"]
     assert "implicit" in metadata["libraryVersions"]
     assert first.status_code == 200
     assert first.json() == second.json()
+    assert first.json()["strategy"] == "HybridSimilar"
 
     items: list[dict[str, Any]] = first.json()["items"]
     ids = [item["productId"] for item in items]
@@ -207,9 +223,10 @@ def test_training_and_similarity_filter_and_order_deterministically(
     assert "00000000-0000-0000-0000-000000000005" not in ids
     assert ids[0] == "00000000-0000-0000-0000-000000000002"
     assert all(0 <= item["tfidfScore"] <= 1 for item in items)
+    assert all(0 <= item["finalScore"] <= 1 for item in items)
     assert items == sorted(
         items,
-        key=lambda item: (-item["tfidfScore"], item["productId"]),
+        key=lambda item: (-item["finalScore"], item["productId"]),
     )
 
 
@@ -261,6 +278,9 @@ def test_personalized_known_subject_is_deterministic_and_filtered(
     assert metadata["algorithmComponents"] == [
         "tfidf-product-content-cosine-v1",
         "implicit-als-v1",
+        "quantity-popularity-v1",
+        "directional-copurchase-v1",
+        "deterministic-hybrid-ranker-v1",
     ]
     assert first.status_code == 200
     assert first.json() == second.json()
@@ -271,6 +291,39 @@ def test_personalized_known_subject_is_deterministic_and_filtered(
         "00000000-0000-0000-0000-000000000003"
     ]
     assert all(0 <= item["score"] <= 1 for item in recommendations)
+
+
+def test_personalized_hybrid_returns_component_diagnostics(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    als_training_payload: dict[str, object],
+) -> None:
+    client.post(
+        "/api/v1/models/train",
+        json=als_training_payload,
+        headers=auth_headers,
+    )
+
+    first = infer_personalized(client, auth_headers, limit=10, strategy="Hybrid")
+    second = infer_personalized(client, auth_headers, limit=10, strategy="Hybrid")
+
+    assert first.status_code == 200
+    assert first.json() == second.json()
+    body = first.json()
+    assert body["strategy"] == "HybridPersonalized"
+    assert body["recommendations"]
+    for item in body["recommendations"]:
+        assert item["score"] == item["finalScore"]
+        assert all(
+            0 <= item[field] <= 1
+            for field in (
+                "alsScore",
+                "contentAffinityScore",
+                "associationScore",
+                "popularityScore",
+                "finalScore",
+            )
+        )
 
 
 def test_personalized_unknown_subject_and_limit_contract(
@@ -288,6 +341,7 @@ def test_personalized_unknown_subject_and_limit_contract(
         auth_headers,
         subject_id="v1.ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ",
         limit=8,
+        strategy="Hybrid",
     )
     invalid = infer_personalized(client, auth_headers, limit=0)
     capped = infer_personalized(client, auth_headers, limit=100)
@@ -340,6 +394,8 @@ def test_evaluation_endpoint_returns_metrics_without_identifiers(
     assert body["status"] == "Succeeded"
     assert body["models"]["popularity"]["status"] == "Evaluated"
     assert body["models"]["als"]["status"] == "Evaluated"
+    assert body["models"]["hybrid"]["status"] == "Evaluated"
+    assert body["comparison"] is not None
     assert body["models"]["tfidf"]["status"] == "NotEvaluated"
     assert body["models"]["fbt"]["status"] == "NotEvaluated"
     assert "subjectId" not in serialized
@@ -395,13 +451,17 @@ def infer_personalized(
     *,
     subject_id: str = "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
     limit: int,
+    strategy: str | None = None,
 ) -> Response:
+    request: dict[str, object] = {
+        "subjectId": subject_id,
+        "limit": limit,
+        "excludePreviouslyPurchased": True,
+    }
+    if strategy is not None:
+        request["strategy"] = strategy
     return client.post(
         "/api/v1/models/personalized",
-        json={
-            "subjectId": subject_id,
-            "limit": limit,
-            "excludePreviouslyPurchased": True,
-        },
+        json=request,
         headers=headers,
     )

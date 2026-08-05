@@ -64,6 +64,10 @@ public sealed class RecommendationModelEvaluationSqlServerTests(
             client.Request);
         Assert.Equal([first.ProductId, second.ProductId], request.CatalogueProductIds);
         Assert.Equal([first.ProductId], request.CandidateProductIds);
+        Assert.Equal(
+            [first.ProductId, second.ProductId],
+            request.Products.Select(product => product.ProductId));
+        Assert.Equal(first.Name, request.Products[0].Name);
         Assert.Equal(2, request.Interactions.Count);
         Assert.All(
             request.Interactions,

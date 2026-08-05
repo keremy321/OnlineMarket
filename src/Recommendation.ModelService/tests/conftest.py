@@ -122,6 +122,7 @@ def evaluation_payload() -> dict[str, object]:
     subject_c = "v1.CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC"
     return {
         "evaluationVersion": "temporal-test-v1",
+        "products": evaluation_products(range(1, 6)),
         "catalogueProductIds": [
             f"00000000-0000-0000-0000-{key:012d}" for key in range(1, 6)
         ],
@@ -190,3 +191,16 @@ def evaluation_interaction(
     payload = interaction_payload(order_key, subject_id, items)
     payload["occurredAtUtc"] = occurred_at_utc
     return payload
+
+
+def evaluation_products(keys: range | list[int]) -> list[dict[str, object]]:
+    return [
+        product_payload(
+            key,
+            f"Evaluation product {key}",
+            f"Deterministic evaluation description {key}",
+            f"10000000-0000-0000-0000-{((key - 1) % 2) + 1:012d}",
+            f"20000000-0000-0000-0000-{((key - 1) % 2) + 1:012d}",
+        )
+        for key in keys
+    ]

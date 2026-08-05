@@ -23,10 +23,18 @@ public sealed record PersonalizedRecommendationItem(
     decimal Score,
     decimal? Confidence,
     PersonalizedRankingSource RankingSource,
-    string? ModelVersion);
+    string? ModelVersion,
+    string? ReasonCode = null,
+    string? ReasonText = null,
+    decimal? AlsScore = null,
+    decimal? ContentAffinityScore = null,
+    decimal? AssociationScore = null,
+    decimal? PopularityScore = null,
+    decimal? FinalScore = null);
 
 public enum PersonalizedRankingSource
 {
     PythonImplicitAls,
+    PythonHybrid,
     CSharpPreferenceFallback
 }

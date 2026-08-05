@@ -27,10 +27,14 @@ public sealed record SimilarRecommendationItem(
     decimal FrequentlyBoughtTogetherScore,
     decimal? FallbackScore,
     SimilarRankingSource RankingSource,
-    string? ModelVersion);
+    string? ModelVersion,
+    decimal? CoPurchaseScore = null,
+    string? ReasonCode = null,
+    string? ReasonText = null);
 
 public enum SimilarRankingSource
 {
     PythonTfidf,
+    PythonHybrid,
     CSharpContentFallback
 }

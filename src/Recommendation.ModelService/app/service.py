@@ -5,21 +5,30 @@ from uuid import UUID
 
 from .als import (
     COLD_START_STRATEGY,
-    PERSONALIZED_STRATEGY,
     find_personalized,
 )
+from .als import (
+    PERSONALIZED_STRATEGY as ALS_PERSONALIZED_STRATEGY,
+)
 from .artifacts import ArtifactStore
-from .config import AlsSettings, EvaluationSettings
+from .config import AlsSettings, EvaluationSettings, HybridSettings
 from .contracts import (
     ArtifactMetadata,
     ModelEvaluationRequest,
     ModelEvaluationResponse,
     ModelTrainingRequest,
+    PersonalizedModelStrategy,
     PersonalizedRecommendationItem,
     SimilarProductItem,
 )
 from .evaluation import EvaluationReportWriter, evaluate_request
-from .model import TrainedModel, find_similar, train_model
+from .hybrid import (
+    PERSONALIZED_STRATEGY as HYBRID_PERSONALIZED_STRATEGY,
+)
+from .hybrid import (
+    find_hybrid_personalized,
+)
+from .model import TrainedModel, find_similar_with_strategy, train_model
 
 
 class ModelUnavailableError(RuntimeError):
@@ -40,9 +49,11 @@ class RecommendationModelService:
         artifact_store: ArtifactStore,
         als_settings: AlsSettings | None = None,
         evaluation_settings: EvaluationSettings | None = None,
+        hybrid_settings: HybridSettings | None = None,
     ) -> None:
         self._artifact_store = artifact_store
         self._als_settings = als_settings or AlsSettings()
+        self._hybrid_settings = hybrid_settings or HybridSettings()
         self._evaluation_settings = evaluation_settings or EvaluationSettings()
         self._evaluation_report_writer = EvaluationReportWriter(
             self._evaluation_settings.output_directory
@@ -67,6 +78,7 @@ class RecommendationModelService:
             candidate = train_model(
                 request,
                 als_settings=self._als_settings,
+                hybrid_settings=self._hybrid_settings,
             )
             self._artifact_store.save(candidate)
             with self._state_lock:
@@ -86,15 +98,13 @@ class RecommendationModelService:
         self,
         product_id: UUID,
         limit: int,
-    ) -> tuple[str, list[SimilarProductItem]]:
+    ) -> tuple[str, str, list[SimilarProductItem]]:
         with self._state_lock:
             model = self._model
         if model is None:
             raise ModelUnavailableError
-        return (
-            model.metadata.modelVersion,
-            find_similar(model, product_id, limit),
-        )
+        strategy, items = find_similar_with_strategy(model, product_id, limit)
+        return model.metadata.modelVersion, strategy, items
 
     def personalized(
         self,
@@ -102,6 +112,7 @@ class RecommendationModelService:
         limit: int | None,
         *,
         exclude_previously_purchased: bool,
+        strategy: PersonalizedModelStrategy,
     ) -> tuple[str, str, list[PersonalizedRecommendationItem]]:
         with self._state_lock:
             model = self._model
@@ -111,6 +122,25 @@ class RecommendationModelService:
             limit or self._als_settings.default_limit,
             self._als_settings.maximum_limit,
         )
+        if (
+            strategy == PersonalizedModelStrategy.HYBRID
+            and model.hybrid is not None
+            and model.als is not None
+        ):
+            hybrid_recommendations = find_hybrid_personalized(
+                model.hybrid,
+                model.als,
+                subject_id,
+                model.availability,
+                resolved_limit,
+                exclude_previously_purchased=exclude_previously_purchased,
+            )
+            if hybrid_recommendations is not None:
+                return (
+                    model.metadata.modelVersion,
+                    HYBRID_PERSONALIZED_STRATEGY,
+                    hybrid_recommendations,
+                )
         recommendations = find_personalized(
             model.als,
             subject_id,
@@ -122,7 +152,7 @@ class RecommendationModelService:
             return model.metadata.modelVersion, COLD_START_STRATEGY, []
         return (
             model.metadata.modelVersion,
-            PERSONALIZED_STRATEGY,
+            ALS_PERSONALIZED_STRATEGY,
             recommendations,
         )
 
@@ -133,6 +163,7 @@ class RecommendationModelService:
             response = evaluate_request(
                 request,
                 als_settings=self._als_settings,
+                hybrid_settings=self._hybrid_settings,
                 evaluation_settings=self._evaluation_settings,
             )
             self._evaluation_report_writer.publish(

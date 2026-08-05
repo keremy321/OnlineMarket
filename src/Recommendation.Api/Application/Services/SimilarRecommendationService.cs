@@ -127,6 +127,9 @@ public sealed class SimilarRecommendationService(
                 && candidate.IsInStock
                 && candidate.ProductId != context.Source!.ProductId)
             .ToDictionary(candidate => candidate.ProductId);
+        var rankingSource = response.Strategy == "HybridSimilar"
+            ? SimilarRankingSource.PythonHybrid
+            : SimilarRankingSource.PythonTfidf;
         return response.Items
             .Where(item => currentCandidates.ContainsKey(item.ProductId))
             .Select(item =>
@@ -134,14 +137,18 @@ public sealed class SimilarRecommendationService(
                 var candidate = currentCandidates[item.ProductId];
                 return new SimilarRecommendationItem(
                     item.ProductId,
+                    item.FinalScore,
                     item.TfidfScore,
-                    item.TfidfScore,
-                    candidate.PopularityScore,
+                    item.PopularityScore,
                     candidate.FrequentlyBoughtTogetherScore,
                     null,
-                    SimilarRankingSource.PythonTfidf,
-                    response.ModelVersion);
+                    rankingSource,
+                    response.ModelVersion,
+                    item.CoPurchaseScore,
+                    item.ReasonCode,
+                    item.ReasonText);
             })
+            .DistinctBy(item => item.ProductId)
             .OrderByDescending(item => item.Score)
             .ThenBy(item => item.ProductId)
             .Take(limit)

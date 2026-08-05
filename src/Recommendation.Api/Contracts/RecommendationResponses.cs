@@ -55,7 +55,8 @@ public sealed record SimilarityMetricsResponse(
     decimal FrequentlyBoughtTogetherScore,
     decimal? FallbackScore,
     string RankingSource,
-    string? ModelVersion);
+    string? ModelVersion,
+    decimal? CoPurchaseScore);
 
 public sealed record PersonalizedRecommendationResponse(
     Guid ProductId,
@@ -68,7 +69,12 @@ public sealed record PersonalizedRecommendationResponse(
 public sealed record PersonalizedMetricsResponse(
     decimal? Confidence,
     string RankingSource,
-    string? ModelVersion);
+    string? ModelVersion,
+    decimal? AlsScore,
+    decimal? ContentAffinityScore,
+    decimal? AssociationScore,
+    decimal? PopularityScore,
+    decimal? FinalScore);
 
 public sealed record RecommendationRecalculationResponse(
     Guid RunId,
@@ -86,11 +92,15 @@ public sealed record RecommendationModelRecalculationResponse(
     string Algorithm,
     IReadOnlyList<string> AlgorithmComponents,
     RecommendationModelComponentStatusesContract Components,
-    RecommendationModelAlsParametersContract AlsParameters);
+    RecommendationModelAlsParametersContract AlsParameters,
+    RecommendationModelHybridParametersContract? HybridParameters);
 
 public sealed record RecommendationModelComponentStatusesContract(
     RecommendationModelComponentStatusContract Tfidf,
-    RecommendationModelComponentStatusContract Als);
+    RecommendationModelComponentStatusContract Als,
+    RecommendationModelComponentStatusContract? Popularity,
+    RecommendationModelComponentStatusContract? Association,
+    RecommendationModelComponentStatusContract? Hybrid);
 
 public sealed record RecommendationModelComponentStatusContract(
     string Status,
@@ -103,6 +113,25 @@ public sealed record RecommendationModelAlsParametersContract(
     decimal Alpha,
     int RandomSeed);
 
+public sealed record RecommendationModelHybridParametersContract(
+    RecommendationModelPersonalizedHybridWeightsContract PersonalizedWeights,
+    RecommendationModelSimilarHybridWeightsContract SimilarWeights,
+    int CandidatePoolMultiplier,
+    int CandidatePoolCap,
+    string ContentAffinityAggregation,
+    string MissingComponentPolicy);
+
+public sealed record RecommendationModelPersonalizedHybridWeightsContract(
+    decimal Als,
+    decimal ContentAffinity,
+    decimal Association,
+    decimal Popularity);
+
+public sealed record RecommendationModelSimilarHybridWeightsContract(
+    decimal ContentSimilarity,
+    decimal CoPurchaseSimilarity,
+    decimal Popularity);
+
 public sealed record RecommendationModelEvaluationResponse(
     string Status,
     string EvaluationVersion,
@@ -112,6 +141,7 @@ public sealed record RecommendationModelEvaluationResponse(
     RecommendationModelEvaluationSplitContract Split,
     RecommendationModelEvaluationExcludedDataContract ExcludedData,
     RecommendationModelEvaluationModelsContract Models,
+    RecommendationModelEvaluationComparisonContract? Comparison,
     string ReportIdentifier,
     RecommendationModelEvaluationReportFilesContract Reports,
     IReadOnlyList<string> Limitations);
@@ -150,6 +180,7 @@ public sealed record RecommendationModelEvaluationExcludedDataContract(
 public sealed record RecommendationModelEvaluationModelsContract(
     RecommendationModelEvaluationModelContract Popularity,
     RecommendationModelEvaluationModelContract Als,
+    RecommendationModelEvaluationModelContract Hybrid,
     RecommendationModelEvaluationModelContract Tfidf,
     RecommendationModelEvaluationModelContract Fbt);
 
@@ -182,7 +213,15 @@ public sealed record RecommendationModelEvaluationParametersContract(
     decimal? Regularization,
     int? Iterations,
     decimal? Alpha,
-    int? RandomSeed);
+    int? RandomSeed,
+    RecommendationModelHybridParametersContract? Hybrid);
+
+public sealed record RecommendationModelEvaluationComparisonContract(
+    decimal HybridMinusAlsPrecisionAt5,
+    decimal HybridMinusAlsRecallAt5,
+    decimal HybridMinusAlsHitRateAt5,
+    decimal HybridMinusAlsNdcgAt5,
+    decimal HybridMinusAlsCoverage);
 
 public sealed record RecommendationModelEvaluationReportFilesContract(
     string JsonFile,

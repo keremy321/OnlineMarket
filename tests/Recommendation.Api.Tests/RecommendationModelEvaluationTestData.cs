@@ -20,6 +20,7 @@ internal static class RecommendationModelEvaluationTestData
             version,
             [FirstProductId, SecondProductId],
             [FirstProductId, SecondProductId],
+            [Product(FirstProductId), Product(SecondProductId)],
             [
                 new RecommendationModelEvaluationOrderRequest(
                     Guid.Parse("40000000-0000-0000-0000-000000000001"),
@@ -76,6 +77,7 @@ internal static class RecommendationModelEvaluationTestData
             new RecommendationModelEvaluationModelsResponse(
                 EvaluatedModel(als: false),
                 EvaluatedModel(als: true),
+                EvaluatedModel(als: true, hybrid: true),
                 NotEvaluatedModel(
                     "TF-IDF requires an item-to-item protocol."),
                 NotEvaluatedModel(
@@ -84,11 +86,18 @@ internal static class RecommendationModelEvaluationTestData
             new RecommendationModelEvaluationReportFilesResponse(
                 $"evaluation-{version}.json",
                 $"evaluation-{version}.md"),
-            ["Timing values are runtime-dependent."]);
+            ["Timing values are runtime-dependent."],
+            new RecommendationModelEvaluationComparisonResponse(
+                0m,
+                0m,
+                0m,
+                0m,
+                0m));
     }
 
     private static RecommendationModelEvaluationModelResponse EvaluatedModel(
-        bool als)
+        bool als,
+        bool hybrid = false)
     {
         return new RecommendationModelEvaluationModelResponse(
             "Evaluated",
@@ -115,7 +124,8 @@ internal static class RecommendationModelEvaluationTestData
                 als ? 0.05m : null,
                 als ? 20 : null,
                 als ? 20m : null,
-                als ? 42 : null));
+                als ? 42 : null,
+                hybrid ? HybridParameters() : null));
     }
 
     private static RecommendationModelEvaluationModelResponse NotEvaluatedModel(
@@ -126,5 +136,38 @@ internal static class RecommendationModelEvaluationTestData
             reason,
             null,
             null);
+    }
+
+    public static RecommendationModelProductRequest Product(Guid productId)
+    {
+        return new RecommendationModelProductRequest(
+            productId,
+            Guid.Parse("10000000-0000-0000-0000-000000000001"),
+            Guid.Parse("20000000-0000-0000-0000-000000000001"),
+            $"Product {productId:N}",
+            "Evaluation product",
+            "Piece",
+            1m,
+            10m,
+            true,
+            true);
+    }
+
+    public static RecommendationModelHybridParametersResponse HybridParameters()
+    {
+        return new RecommendationModelHybridParametersResponse(
+            new RecommendationModelPersonalizedHybridWeightsResponse(
+                0.50m,
+                0.20m,
+                0.15m,
+                0.15m),
+            new RecommendationModelSimilarHybridWeightsResponse(
+                0.70m,
+                0.20m,
+                0.10m),
+            10,
+            500,
+            "maximum_similarity",
+            "fallback_to_als_without_renormalization");
     }
 }
