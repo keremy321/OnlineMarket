@@ -4,12 +4,30 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace ErpIntegration.Api.Controllers;
 
+/// <summary>
+/// Accepts <c>OrderReadyForErpV1</c> events from the OnlineMarket.Web outbox
+/// and exposes the resulting integration batch's status and retry.
+/// </summary>
 [ApiController]
 [Route("api/v1/integration/orders")]
 public sealed class IntegrationOrdersController(
     IIntegrationOrderService orderService)
     : ControllerBase
 {
+    /// <summary>
+    /// Accepts an <c>OrderReadyForErpV1</c> event and queues its integration
+    /// batch (customer upsert, order, stock movements and accounting entry
+    /// steps toward the Mock ERP system).
+    /// </summary>
+    /// <remarks>
+    /// Idempotent on <c>EventId</c>: replaying the same event with an
+    /// identical canonical payload returns 202 Accepted again for the same
+    /// batch rather than creating a duplicate. Replaying the same
+    /// <c>EventId</c> with a different payload returns 409 Conflict.
+    /// </remarks>
+    /// <param name="request">The canonical order-ready-for-ERP event.</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Integration Events")]
     [HttpPost]
     [Consumes("application/json")]
     [ProducesResponseType<IntegrationOrderAcceptedResponse>(
@@ -51,6 +69,13 @@ public sealed class IntegrationOrdersController(
             accepted);
     }
 
+    /// <summary>
+    /// Returns the current status and per-step outcomes of an integration
+    /// batch.
+    /// </summary>
+    /// <param name="orderId">The order ID from the accepted event.</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Integration Events")]
     [HttpGet("{orderId:guid}")]
     [ProducesResponseType<IntegrationOrderStatusResponse>(
         StatusCodes.Status200OK)]
@@ -81,6 +106,17 @@ public sealed class IntegrationOrdersController(
             : Ok(response);
     }
 
+    /// <summary>
+    /// Retries the integration batch's first eligible failed step, reusing
+    /// its original idempotency key.
+    /// </summary>
+    /// <remarks>
+    /// Returns 404 if the batch does not exist, or 409 if no step is
+    /// currently eligible for a manual retry.
+    /// </remarks>
+    /// <param name="orderId">The order ID from the accepted event.</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Retry Operations")]
     [HttpPost("{orderId:guid}/retry")]
     [ProducesResponseType<IntegrationOrderStatusResponse>(
         StatusCodes.Status200OK)]

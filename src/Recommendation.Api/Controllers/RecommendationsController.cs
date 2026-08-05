@@ -9,6 +9,11 @@ using Recommendation.Api.Infrastructure.Security;
 
 namespace Recommendation.Api.Controllers;
 
+/// <summary>
+/// Serves popularity, association and personalization-based product
+/// recommendations, and triggers their underlying model recalculation and
+/// evaluation runs.
+/// </summary>
 [ApiController]
 [Authorize(AuthenticationSchemes = ApiKeyDefaults.Scheme)]
 [Route("api/v1/recommendations")]
@@ -22,6 +27,13 @@ public sealed class RecommendationsController(
     IRecommendationModelEvaluationService modelEvaluationService)
     : ControllerBase
 {
+    /// <summary>
+    /// Returns products ranked by recent confirmed-order sales volume,
+    /// independent of any specific customer.
+    /// </summary>
+    /// <param name="limit">Maximum number of items to return.</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Popular Recommendations")]
     [HttpGet("popular")]
     [ProducesResponseType<IReadOnlyList<RecommendationResponse>>(
         StatusCodes.Status200OK)]
@@ -36,6 +48,19 @@ public sealed class RecommendationsController(
         return Ok(items.Select(MapRecommendation).ToArray());
     }
 
+    /// <summary>
+    /// Returns products personalized for a specific customer, derived from
+    /// their pseudonymous purchase interactions and content/association
+    /// fallbacks when insufficient history exists (cold start).
+    /// </summary>
+    /// <param name="customerId">The OnlineMarket customer ID.</param>
+    /// <param name="limit">Maximum number of items to return.</param>
+    /// <param name="excludePreviouslyPurchased">
+    /// When <see langword="true"/> (default), products the customer has
+    /// already purchased are excluded from the results.
+    /// </param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Personalized Recommendations")]
     [HttpGet("customers/{customerId:guid}")]
     [ProducesResponseType<IReadOnlyList<PersonalizedRecommendationResponse>>(
         StatusCodes.Status200OK)]
@@ -55,6 +80,14 @@ public sealed class RecommendationsController(
         return Ok(items.Select(MapPersonalizedRecommendation).ToArray());
     }
 
+    /// <summary>
+    /// Returns products frequently purchased together with the given product,
+    /// based on association mining over confirmed orders.
+    /// </summary>
+    /// <param name="productId">The source product ID.</param>
+    /// <param name="limit">Maximum number of items to return.</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Frequently Bought Together")]
     [HttpGet("fbt/{productId:guid}")]
     [ProducesResponseType<
         IReadOnlyList<FrequentlyBoughtTogetherRecommendationResponse>>(
@@ -72,7 +105,15 @@ public sealed class RecommendationsController(
         return Ok(items.Select(MapFbtRecommendation).ToArray());
     }
 
+    /// <summary>
+    /// Returns products frequently purchased alongside the given cart
+    /// contents, to suggest cart-completion items.
+    /// </summary>
+    /// <param name="request">The current cart's product IDs and result limit.</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Cart Completion")]
     [HttpPost("cart")]
+    [Consumes("application/json")]
     [ProducesResponseType<
         IReadOnlyList<CartCompletionRecommendationResponse>>(
         StatusCodes.Status200OK)]
@@ -88,6 +129,14 @@ public sealed class RecommendationsController(
         return Ok(items.Select(MapCartCompletionRecommendation).ToArray());
     }
 
+    /// <summary>
+    /// Returns products similar to the given product, based on content
+    /// features and, where available, co-purchase signals.
+    /// </summary>
+    /// <param name="productId">The source product ID.</param>
+    /// <param name="limit">Maximum number of items to return.</param>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Similar Products")]
     [HttpGet("similar/{productId:guid}")]
     [ProducesResponseType<IReadOnlyList<SimilarRecommendationResponse>>(
         StatusCodes.Status200OK)]
@@ -104,6 +153,12 @@ public sealed class RecommendationsController(
         return Ok(items.Select(MapSimilarRecommendation).ToArray());
     }
 
+    /// <summary>
+    /// Triggers synchronous training of the TF-IDF and ALS recommendation
+    /// models against the current interaction data.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Model Operations")]
     [HttpPost("recalculate-models")]
     [ProducesResponseType<RecommendationModelRecalculationResponse>(
         StatusCodes.Status200OK)]
@@ -156,6 +211,12 @@ public sealed class RecommendationsController(
             MapHybridParameters(result.Metadata.HybridParameters)));
     }
 
+    /// <summary>
+    /// Runs offline evaluation (precision/recall/hit-rate/NDCG) of the
+    /// trained models against a held-out split of confirmed orders.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Evaluation")]
     [HttpPost("evaluate-models")]
     [ProducesResponseType<RecommendationModelEvaluationResponse>(
         StatusCodes.Status200OK)]
@@ -180,6 +241,15 @@ public sealed class RecommendationsController(
         return Ok(MapModelEvaluation(result.Value));
     }
 
+    /// <summary>
+    /// Recalculates the popularity ranking from recent confirmed orders.
+    /// </summary>
+    /// <remarks>
+    /// Returns 409 Conflict if a popularity recalculation run is already in
+    /// progress; it does not queue or duplicate the run.
+    /// </remarks>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Popular Recommendations")]
     [HttpPost("recalculate")]
     [ProducesResponseType<RecommendationRecalculationResponse>(
         StatusCodes.Status200OK)]
@@ -206,6 +276,16 @@ public sealed class RecommendationsController(
             result.OutputRecordCount));
     }
 
+    /// <summary>
+    /// Recalculates the frequently-bought-together association model from
+    /// recent confirmed orders.
+    /// </summary>
+    /// <remarks>
+    /// Returns 409 Conflict if an FBT recalculation run is already in
+    /// progress; it does not queue or duplicate the run.
+    /// </remarks>
+    /// <param name="cancellationToken">Cancellation token for the request.</param>
+    [Tags("Frequently Bought Together")]
     [HttpPost("recalculate-fbt")]
     [ProducesResponseType<RecommendationRecalculationResponse>(
         StatusCodes.Status200OK)]

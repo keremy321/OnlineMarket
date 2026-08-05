@@ -52,8 +52,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(
         title="Recommendation.ModelService",
         version="1.0.0",
-        docs_url=None,
-        redoc_url=None,
+        description=(
+            "Trains and serves the TF-IDF, ALS and hybrid recommendation "
+            "models used by Recommendation.Api, and evaluates them against "
+            "held-out order history. All endpoints except /health require "
+            "the X-Api-Key header."
+        ),
+        docs_url="/docs",
+        redoc_url="/redoc",
         lifespan=lifespan,
     )
     application.state.model_service = model_service
