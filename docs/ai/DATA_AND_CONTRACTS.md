@@ -120,8 +120,9 @@ Must not contain address, email, phone, payment, or financial details.
 ### Recommendation.ModelService internal V1
 
 `Recommendation.Api` sends an authenticated training request containing model
-version/correlation data, product content snapshots, and order baskets with
-only product IDs and quantities. It must not send `CustomerId` or customer PII.
+version/correlation data, product content snapshots, and order interactions
+with a versioned pseudonymous `SubjectId`, product IDs, and quantities. It must
+not send direct market `CustomerId` or customer PII.
 Python returns recommendation-owned IDs/scores and model artifact metadata.
 The internal endpoints are:
 
@@ -139,8 +140,9 @@ POST /api/v1/recommendations/recalculate-models
 GET  /api/v1/recommendations/similar/{productId}?limit={value}
 ```
 
-The stored market `CustomerId` is not an anonymized model subject. Implicit ALS
-personalization requires a separately approved stable `SubjectId` contract.
+The stored market `CustomerId` remains internal to Recommendation.Api. Python
+treats `SubjectId` as an opaque string; it never receives the derivation key or
+the direct identifier.
 
 ### OrderReadyForErpV1
 

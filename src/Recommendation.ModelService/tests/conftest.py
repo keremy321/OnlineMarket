@@ -75,6 +75,9 @@ def training_payload() -> dict[str, object]:
         "interactions": [
             {
                 "orderId": "40000000-0000-0000-0000-000000000001",
+                "subjectId": (
+                    "v1.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                ),
                 "items": [
                     {"productId": str(SOURCE_ID), "quantity": 1},
                     {

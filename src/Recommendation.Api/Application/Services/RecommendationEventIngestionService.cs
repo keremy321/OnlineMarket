@@ -7,6 +7,7 @@ namespace Recommendation.Api.Application.Services;
 public sealed class RecommendationEventIngestionService(
     IRecommendationEventStore store,
     RecommendationEventValidator validator,
+    IRecommendationSubjectIdDeriver subjectIdDeriver,
     TimeProvider timeProvider,
     ILogger<RecommendationEventIngestionService> logger)
     : IRecommendationEventIngestionService
@@ -51,12 +52,20 @@ public sealed class RecommendationEventIngestionService(
         }
 
         var normalized = validation.NormalizedRequest;
+        var subjectId = subjectIdDeriver.Derive(normalized.CustomerId);
+        if (!RecommendationSubjectIdContract.IsValid(subjectId))
+        {
+            throw new InvalidOperationException(
+                "Recommendation subject derivation returned an invalid identifier.");
+        }
+
         var result = await store.AcceptOrderAsync(
             new OrderEventIntake(
                 normalized,
                 RecommendationEventPayloadHasher.Compute(normalized),
                 GetUtcNow(),
-                validation.TotalQuantity.Value),
+                validation.TotalQuantity.Value,
+                subjectId),
             cancellationToken);
 
         return MapResult(

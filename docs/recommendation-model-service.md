@@ -8,21 +8,21 @@ purpose-limited product and order-product snapshots from `Recommendation.Api`.
 ## Contract and data boundary
 
 The private training contract contains product content/availability fields and
-order baskets with product IDs and quantities. It contains no customer ID,
-name, address, email, phone, payment data, or other customer PII. Python returns
+order baskets with a pseudonymous `SubjectId`, product IDs, and quantities. It
+contains no direct market customer ID, name, address, email, phone, payment
+data, or other direct customer PII. Python returns
 only product IDs, TF-IDF scores, model version, and artifact metadata. Product
 display data, price, current activity, and current stock remain outside Python;
 `Recommendation.Api` performs a final snapshot availability check and
 `OnlineMarket.Web` remains responsible for its final authoritative catalogue
 check.
 
-The current order event and `RecommendationDb.OrderSnapshots` contain a stable
-market `CustomerId`. That value is a direct cross-service customer identifier,
-not a model-specific anonymized subject identifier, so it is deliberately not
-sent to Python. Consequently, implicit ALS cannot currently provide
-user-personalized recommendations. A separate versioned contract task must
-define lifecycle, rotation, privacy, and backfill rules for an anonymized stable
-`SubjectId` before user-personalized model training is added.
+The current order event remains unchanged. `Recommendation.Api` derives a
+stable versioned `SubjectId` from its stored market `CustomerId` using
+HMAC-SHA256 and sends only that pseudonymous opaque value in Python order
+interactions. Python never receives the direct identifier or derivation key.
+The derivation, initial backfill, and rotation contract is documented in
+`docs/recommendation-subject-id.md`. ALS implementation remains a separate task.
 
 ## Configuration
 
@@ -32,6 +32,8 @@ Configure `Recommendation.Api` with environment variables or User Secrets:
 Services__RecommendationModelService__BaseAddress=http://127.0.0.1:8085
 Services__RecommendationModelService__ApiKey=<LOCAL_ONLY_SECRET>
 Services__RecommendationModelService__Timeout=00:00:03
+RecommendationSubject__Key=<AT_LEAST_32_BYTE_LOCAL_SECRET>
+RecommendationSubject__Version=v1
 ```
 
 Configure Python with the same local-only key:

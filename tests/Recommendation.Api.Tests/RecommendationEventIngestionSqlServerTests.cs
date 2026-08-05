@@ -2,6 +2,11 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using Recommendation.Api.Application.Interfaces;
+using Recommendation.Api.Application.Options;
 using Recommendation.Api.Contracts;
 using Recommendation.Api.Domain.Entities;
 using Recommendation.Api.Domain.Enums;
@@ -173,7 +178,7 @@ public sealed class RecommendationEventIngestionSqlServerTests(
     }
 
     [Fact]
-    public async Task Order_event_creates_anonymous_snapshot_and_replays()
+    public async Task Order_event_creates_pseudonymous_snapshot_and_replays()
     {
         await using var database = await fixture.CreateDatabaseAsync();
         var firstProductId = Guid.NewGuid();
@@ -222,12 +227,45 @@ public sealed class RecommendationEventIngestionSqlServerTests(
         Assert.Equal(request.OrderId, order.OrderId);
         Assert.Equal(request.OrderNumber, order.OrderNumber);
         Assert.Equal(request.CustomerId, order.CustomerId);
+        Assert.Equal(CreateSubjectDeriver().Derive(request.CustomerId), order.SubjectId);
+        Assert.Matches(
+            @"^v1\.[A-Za-z0-9_-]{43}$",
+            order.SubjectId);
         Assert.Equal(request.OccurredAtUtc, order.OccurredAtUtc);
         Assert.Equal(5, order.TotalQuantity);
         Assert.Equal(2, order.DistinctProductCount);
         Assert.Equal(2, items.Length);
         Assert.Equal(1, await context.ProcessedEvents.CountAsync());
         AssertNoPersonalOrFinancialEntityProperties();
+    }
+
+    [Fact]
+    public async Task Subject_derivation_failure_leaves_no_partial_order_rows()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        var productId = Guid.NewGuid();
+        await SeedProductsAsync(database, productId);
+        await using var factory = new RecommendationWebApplicationFactory(
+            database.ConnectionString,
+            ApiKey,
+            configureServices: services =>
+            {
+                services.RemoveAll<IRecommendationSubjectIdDeriver>();
+                services.AddSingleton<IRecommendationSubjectIdDeriver>(
+                    new ThrowingSubjectIdDeriver());
+            });
+        using var client = CreateClient(factory);
+        var request = RecommendationEventTestData.CreateOrder((productId, 1));
+
+        using var response = await PostAsync(client, "orders", request);
+
+        Assert.Equal(
+            HttpStatusCode.InternalServerError,
+            response.StatusCode);
+        await using var context = database.CreateContext();
+        Assert.Equal(0, await context.OrderSnapshots.CountAsync());
+        Assert.Equal(0, await context.OrderSnapshotItems.CountAsync());
+        Assert.Equal(0, await context.ProcessedEvents.CountAsync());
     }
 
     [Fact]
@@ -418,5 +456,26 @@ public sealed class RecommendationEventIngestionSqlServerTests(
         Assert.DoesNotContain(
             persistedPropertyNames,
             property => forbiddenNames.Contains(property));
+    }
+
+    private static IRecommendationSubjectIdDeriver CreateSubjectDeriver()
+    {
+        return new HmacRecommendationSubjectIdDeriver(
+            Options.Create(new RecommendationSubjectOptions
+            {
+                Key =
+                    "test-only-recommendation-subject-key-32-bytes-minimum",
+                Version = "v1"
+            }));
+    }
+
+    private sealed class ThrowingSubjectIdDeriver
+        : IRecommendationSubjectIdDeriver
+    {
+        public string Derive(Guid customerId)
+        {
+            throw new InvalidOperationException(
+                "Injected subject derivation failure.");
+        }
     }
 }

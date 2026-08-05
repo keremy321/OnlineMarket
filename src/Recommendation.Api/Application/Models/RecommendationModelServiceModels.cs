@@ -20,6 +20,7 @@ public sealed record ModelProductTrainingSnapshot(
 
 public sealed record ModelOrderInteraction(
     Guid OrderId,
+    string SubjectId,
     IReadOnlyList<ModelOrderInteractionItem> Items);
 
 public sealed record ModelOrderInteractionItem(
@@ -46,6 +47,7 @@ public sealed record RecommendationModelProductRequest(
 
 public sealed record RecommendationModelOrderInteractionRequest(
     Guid OrderId,
+    string SubjectId,
     IReadOnlyList<RecommendationModelOrderInteractionItemRequest> Items);
 
 public sealed record RecommendationModelOrderInteractionItemRequest(

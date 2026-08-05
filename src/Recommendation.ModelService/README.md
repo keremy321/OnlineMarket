@@ -4,6 +4,11 @@ Internal FastAPI service for versioned product-content models. It has no
 database connection and accepts only recommendation snapshots supplied by
 `Recommendation.Api`.
 
+Order interactions carry a versioned opaque `subjectId`. Direct market
+`CustomerId`, the HMAC derivation key, and customer-to-subject mappings are
+forbidden in Python requests, artifacts, and logs. SubjectId is pseudonymous,
+not fully anonymous.
+
 ## Local startup
 
 Use Python 3.13, create a virtual environment, and install the pinned packages:

@@ -20,6 +20,16 @@ NonBlankText = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1),
 ]
 
+SubjectId = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=46,
+        max_length=64,
+        pattern=r"^v[1-9][0-9]{0,14}\.[A-Za-z0-9_-]{43}$",
+    ),
+]
+
 
 class StrictContract(BaseModel):
     model_config = ConfigDict(
@@ -72,6 +82,7 @@ class OrderInteractionItem(StrictContract):
 
 class OrderProductInteraction(StrictContract):
     orderId: UUID
+    subjectId: SubjectId
     items: list[OrderInteractionItem] = Field(min_length=1, max_length=1000)
 
     @field_validator("orderId")

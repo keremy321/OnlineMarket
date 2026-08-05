@@ -26,9 +26,11 @@ public sealed class RecommendationModelOrchestrationTests
             [
                 new ModelOrderInteraction(
                     secondOrderId,
+                    Subject('B'),
                     [new ModelOrderInteractionItem(secondProductId, 2)]),
                 new ModelOrderInteraction(
                     firstOrderId,
+                    Subject('A'),
                     [
                         new ModelOrderInteractionItem(secondProductId, 1),
                         new ModelOrderInteractionItem(firstProductId, 1)
@@ -51,13 +53,21 @@ public sealed class RecommendationModelOrchestrationTests
             [firstOrderId, secondOrderId],
             request.Interactions.Select(interaction => interaction.OrderId));
         Assert.Equal(
+            [Subject('A'), Subject('B')],
+            request.Interactions.Select(interaction => interaction.SubjectId));
+        Assert.Equal(
             [firstProductId, secondProductId],
             request.Interactions[0].Items.Select(item => item.ProductId));
         Assert.DoesNotContain("CustomerId", json, StringComparison.Ordinal);
-        Assert.DoesNotContain("SubjectId", json, StringComparison.Ordinal);
+        Assert.Contains("SubjectId", json, StringComparison.Ordinal);
         Assert.DoesNotContain("Email", json, StringComparison.Ordinal);
         Assert.DoesNotContain("Address", json, StringComparison.Ordinal);
         Assert.DoesNotContain("Phone", json, StringComparison.Ordinal);
+    }
+
+    private static string Subject(char value)
+    {
+        return $"v1.{new string(value, 43)}";
     }
 
     private static ModelProductTrainingSnapshot Product(

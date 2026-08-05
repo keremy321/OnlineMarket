@@ -118,9 +118,10 @@ Two workers must not claim the same message.
 - The first versioned artifact is deterministic TF-IDF product-content
   similarity. C# popularity, affinity, cart completion, and deterministic
   content similarity remain available for hybrid inputs and fallback.
-- Current `CustomerId` is not exported to Python. User-personalized implicit
-  ALS is deferred until a separate contract supplies an anonymized stable
-  `SubjectId`.
+- `Recommendation.Api` derives a stable pseudonymous `SubjectId` with
+  versioned HMAC-SHA256 and exports only that opaque value for order
+  interactions. Direct market `CustomerId` and the derivation key never enter
+  Python contracts, artifacts, or logs.
 
 ## ERP Integration
 

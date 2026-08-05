@@ -35,7 +35,8 @@ public sealed class RecommendationDbContextSqlServerTests(
         Assert.Equal(
             [
                 "20260729111303_InitialRecommendationSchema",
-                "20260805071301_AddRecommendationProductDescription"
+                "20260805071301_AddRecommendationProductDescription",
+                "20260805085430_AddRecommendationSubjectId"
             ],
             await context.Database.GetAppliedMigrationsAsync());
     }

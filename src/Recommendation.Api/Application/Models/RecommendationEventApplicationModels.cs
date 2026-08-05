@@ -36,4 +36,5 @@ public sealed record OrderEventIntake(
     OrderConfirmedForRecommendationV1Request Event,
     string PayloadHash,
     DateTime ReceivedAtUtc,
-    int TotalQuantity);
+    int TotalQuantity,
+    string SubjectId);

@@ -8,6 +8,8 @@ public sealed class OrderSnapshot
 
     public Guid CustomerId { get; set; }
 
+    public string? SubjectId { get; set; }
+
     public DateTime OccurredAtUtc { get; set; }
 
     public int TotalQuantity { get; set; }

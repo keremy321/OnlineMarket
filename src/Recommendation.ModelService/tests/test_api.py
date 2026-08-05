@@ -94,6 +94,47 @@ def test_training_contract_rejects_duplicate_and_unknown_product_ids(
     assert unknown_response.status_code == 422
 
 
+def test_training_contract_requires_opaque_subject_id_and_rejects_customer_id(
+    client: TestClient,
+    auth_headers: dict[str, str],
+    training_payload: dict[str, object],
+) -> None:
+    missing = deepcopy(training_payload)
+    empty = deepcopy(training_payload)
+    invalid = deepcopy(training_payload)
+    with_customer_id = deepcopy(training_payload)
+
+    for payload, subject_id in (
+        (missing, None),
+        (empty, ""),
+        (invalid, "v1.not-a-valid-hmac"),
+    ):
+        interactions = payload["interactions"]
+        assert isinstance(interactions, list)
+        interaction = interactions[0]
+        assert isinstance(interaction, dict)
+        if subject_id is None:
+            interaction.pop("subjectId")
+        else:
+            interaction["subjectId"] = subject_id
+
+    customer_interactions = with_customer_id["interactions"]
+    assert isinstance(customer_interactions, list)
+    customer_interaction = customer_interactions[0]
+    assert isinstance(customer_interaction, dict)
+    customer_interaction["customerId"] = (
+        "50000000-0000-0000-0000-000000000001"
+    )
+
+    for payload in (missing, empty, invalid, with_customer_id):
+        response = client.post(
+            "/api/v1/models/train",
+            json=payload,
+            headers=auth_headers,
+        )
+        assert response.status_code == 422
+
+
 def test_training_and_similarity_filter_and_order_deterministically(
     client: TestClient,
     auth_headers: dict[str, str],

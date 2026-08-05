@@ -328,6 +328,7 @@ public sealed class SqlServerRecommendationEventStore(
             OrderId = intake.Event.OrderId,
             OrderNumber = intake.Event.OrderNumber!,
             CustomerId = intake.Event.CustomerId,
+            SubjectId = intake.SubjectId,
             OccurredAtUtc = intake.Event.OccurredAtUtc,
             TotalQuantity = intake.TotalQuantity,
             DistinctProductCount = intake.Event.Items!.Count,

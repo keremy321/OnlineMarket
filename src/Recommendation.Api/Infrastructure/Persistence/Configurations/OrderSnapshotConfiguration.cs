@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using Recommendation.Api.Application.Models;
 using Recommendation.Api.Domain.Entities;
 
 namespace Recommendation.Api.Infrastructure.Persistence.Configurations;
@@ -35,6 +36,12 @@ public sealed class OrderSnapshotConfiguration : IEntityTypeConfiguration<OrderS
         builder.Property(order => order.CustomerId)
             .HasColumnType("uniqueidentifier");
 
+        builder.Property(order => order.SubjectId)
+            .HasColumnType("varchar(64)")
+            .HasMaxLength(RecommendationSubjectIdContract.MaximumLength)
+            .IsUnicode(false)
+            .IsRequired(false);
+
         builder.Property(order => order.OccurredAtUtc)
             .HasColumnType("datetime2(3)");
 
@@ -65,6 +72,15 @@ public sealed class OrderSnapshotConfiguration : IEntityTypeConfiguration<OrderS
             })
             .IsDescending(false, true)
             .HasDatabaseName("IX_OrderSnapshots_CustomerId_OccurredAtUtc");
+
+        builder.HasIndex(order => new
+            {
+                order.SubjectId,
+                order.OccurredAtUtc
+            })
+            .IsDescending(false, true)
+            .HasFilter("[SubjectId] IS NOT NULL")
+            .HasDatabaseName("IX_OrderSnapshots_SubjectId_OccurredAtUtc");
 
         builder.HasIndex(order => order.OccurredAtUtc)
             .HasDatabaseName("IX_OrderSnapshots_OccurredAtUtc");

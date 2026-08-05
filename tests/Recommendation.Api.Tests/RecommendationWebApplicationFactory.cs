@@ -1,13 +1,15 @@
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Recommendation.Api.Tests;
 
 internal sealed class RecommendationWebApplicationFactory(
     string connectionString,
     string? apiKey,
-    IReadOnlyDictionary<string, string?>? additionalConfiguration = null)
+    IReadOnlyDictionary<string, string?>? additionalConfiguration = null,
+    Action<IServiceCollection>? configureServices = null)
     : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -19,6 +21,9 @@ internal sealed class RecommendationWebApplicationFactory(
             {
                 ["ConnectionStrings:RecommendationDb"] = connectionString,
                 ["Security:ApiKey"] = apiKey,
+                ["RecommendationSubject:Key"] =
+                    "test-only-recommendation-subject-key-32-bytes-minimum",
+                ["RecommendationSubject:Version"] = "v1",
                 ["Services:RecommendationModelService:BaseAddress"] =
                     "https://recommendation-model-service.test",
                 ["Services:RecommendationModelService:ApiKey"] =
@@ -36,5 +41,9 @@ internal sealed class RecommendationWebApplicationFactory(
 
             configuration.AddInMemoryCollection(values);
         });
+        if (configureServices is not null)
+        {
+            builder.ConfigureServices(configureServices);
+        }
     }
 }

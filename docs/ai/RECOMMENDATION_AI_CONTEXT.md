@@ -91,7 +91,7 @@ Detailed flow:
 4. Online Market delivers product and order events to `Recommendation.Api`.
 5. `Recommendation.Api` validates and projects events into `RecommendationDb`.
 6. Training is triggered by time or data-volume thresholds.
-7. `Recommendation.Api` exports anonymous training data to the Python model service.
+7. `Recommendation.Api` exports purpose-limited training data with a versioned pseudonymous `SubjectId` to the Python model service.
 8. Python trains and evaluates models.
 9. A successful model produces versioned artifacts.
 10. The active model changes only after validation succeeds.
@@ -499,7 +499,7 @@ InteractionWeight =
 Input:
 
 ```text
-CustomerId
+SubjectId
 ProductId
 Quantity
 OccurredAtUtc
@@ -508,7 +508,7 @@ OccurredAtUtc
 Output:
 
 ```text
-CustomerId
+SubjectId
 RecommendedProductId
 Score
 ModelVersion
@@ -574,7 +574,9 @@ The Python service must not be called directly by the browser.
 
 ## 9.1 Training payload
 
-Only anonymous recommendation fields may be sent.
+Only purpose-limited recommendation fields may be sent. `SubjectId` is
+pseudonymous and linkable across interactions; it must not be described as
+legally or cryptographically anonymous.
 
 Products:
 
@@ -595,7 +597,7 @@ Interactions:
 
 ```text
 OrderId
-CustomerId
+SubjectId
 OccurredAtUtc
 Items[] {
     ProductId
@@ -785,7 +787,8 @@ Rules:
 - no API keys in logs
 - no personal payload logging
 - no personal data in model artifacts
-- `CustomerId` may be used as a technical identifier
+- direct market `CustomerId`, the SubjectId derivation key, and customer-to-subject mappings are forbidden in Python requests, artifacts, and logs
+- `SubjectId` is an opaque, purpose-limited pseudonymous technical identifier derived only by `Recommendation.Api`
 - CORS disabled unless explicitly required
 - train/recalculate endpoints must be internal or admin-protected
 

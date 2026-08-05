@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Recommendation.Api.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using Recommendation.Api.Infrastructure.Persistence;
 namespace Recommendation.Api.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(RecommendationDbContext))]
-    partial class RecommendationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260805085430_AddRecommendationSubjectId")]
+    partial class AddRecommendationSubjectId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

@@ -40,6 +40,14 @@ public sealed class RecommendationModelOrchestrationService(
                 nameof(correlationId));
         }
 
+        if (snapshot.Interactions.Any(interaction =>
+                !RecommendationSubjectIdContract.IsValid(
+                    interaction.SubjectId)))
+        {
+            throw new InvalidOperationException(
+                "Every model-training interaction requires a valid SubjectId.");
+        }
+
         return new RecommendationModelTrainingRequest(
             modelVersion,
             correlationId,
@@ -62,6 +70,7 @@ public sealed class RecommendationModelOrchestrationService(
                 .Select(interaction =>
                     new RecommendationModelOrderInteractionRequest(
                         interaction.OrderId,
+                        interaction.SubjectId,
                         interaction.Items
                             .OrderBy(item => item.ProductId)
                             .Select(item =>

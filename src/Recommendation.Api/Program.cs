@@ -28,6 +28,15 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     IRecommendationEventIngestionService,
     RecommendationEventIngestionService>();
+builder.Services.AddSingleton<
+    IRecommendationSubjectIdDeriver,
+    HmacRecommendationSubjectIdDeriver>();
+builder.Services.AddScoped<
+    IRecommendationSubjectBackfillStore,
+    SqlServerRecommendationSubjectBackfillStore>();
+builder.Services.AddScoped<
+    IRecommendationSubjectBackfillService,
+    RecommendationSubjectBackfillService>();
 builder.Services.AddScoped<
     IPopularityRecommendationStore,
     SqlServerPopularityRecommendationStore>();
@@ -61,6 +70,15 @@ builder.Services.AddScoped<
 builder.Services.AddSingleton<RecommendationEventValidator>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<RecommendationModelCircuitBreaker>();
+builder.Services
+    .AddOptions<RecommendationSubjectOptions>()
+    .Bind(builder.Configuration.GetSection(
+        RecommendationSubjectOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        $"Configuration section '{RecommendationSubjectOptions.SectionName}' is invalid. " +
+        $"Provide a key of at least {RecommendationSubjectOptions.MinimumKeySizeBytes} UTF-8 bytes and a version such as 'v1'.")
+    .ValidateOnStart();
 builder.Services
     .AddOptions<PopularityRecommendationOptions>()
     .Bind(builder.Configuration.GetSection(

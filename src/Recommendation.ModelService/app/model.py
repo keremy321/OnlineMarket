@@ -77,7 +77,11 @@ def interaction_payload(
         item.model_dump(mode="json") for item in interaction.items
     ]
     items.sort(key=lambda item: str(item["productId"]))
-    return {"orderId": str(interaction.orderId), "items": items}
+    return {
+        "orderId": str(interaction.orderId),
+        "subjectId": interaction.subjectId,
+        "items": items,
+    }
 
 
 def train_model(

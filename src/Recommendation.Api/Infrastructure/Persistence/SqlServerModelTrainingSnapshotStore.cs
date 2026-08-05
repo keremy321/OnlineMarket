@@ -33,15 +33,28 @@ public sealed class SqlServerModelTrainingSnapshotStore(
             .Select(item => new
             {
                 item.OrderId,
+                item.Order.SubjectId,
                 Item = new ModelOrderInteractionItem(
                     item.ProductId,
                     item.Quantity)
             })
             .ToArrayAsync(cancellationToken);
+        if (items.Any(item =>
+                !RecommendationSubjectIdContract.IsValid(item.SubjectId)))
+        {
+            throw new InvalidOperationException(
+                "Recommendation order interactions require a completed SubjectId backfill before model training.");
+        }
+
         var interactions = items
-            .GroupBy(item => item.OrderId)
+            .GroupBy(item => new
+            {
+                item.OrderId,
+                item.SubjectId
+            })
             .Select(group => new ModelOrderInteraction(
-                group.Key,
+                group.Key.OrderId,
+                group.Key.SubjectId!,
                 group.Select(item => item.Item).ToArray()))
             .ToArray();
         return new ModelTrainingSnapshot(products, interactions);

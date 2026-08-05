@@ -24,6 +24,7 @@ public sealed class RecommendationModelTrainingSnapshotSqlServerTests(
                 "80000000-0000-0000-0000-000000000001"),
             OrderNumber = "ORD-MODEL-0001",
             CustomerId = customerId,
+            SubjectId = $"v1.{new string('A', 43)}",
             OccurredAtUtc = DateTime.UtcNow,
             TotalQuantity = 3,
             DistinctProductCount = 2,
@@ -62,6 +63,7 @@ public sealed class RecommendationModelTrainingSnapshotSqlServerTests(
         Assert.Equal(2, request.Products.Count);
         Assert.Single(request.Interactions);
         Assert.Equal(2, request.Interactions[0].Items.Count);
+        Assert.Equal(order.SubjectId, request.Interactions[0].SubjectId);
         Assert.Contains(first.Description!, json, StringComparison.Ordinal);
         Assert.DoesNotContain(
             customerId.ToString(),
@@ -69,6 +71,49 @@ public sealed class RecommendationModelTrainingSnapshotSqlServerTests(
             StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("CustomerId", json, StringComparison.Ordinal);
         Assert.DoesNotContain("OrderNumber", json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Training_snapshot_requires_completed_subject_backfill()
+    {
+        await using var database = await fixture.CreateDatabaseAsync();
+        var product = Product(1);
+        var order = new OrderSnapshot
+        {
+            OrderId = Guid.NewGuid(),
+            OrderNumber = "ORD-MODEL-MISSING-SUBJECT",
+            CustomerId = Guid.NewGuid(),
+            SubjectId = null,
+            OccurredAtUtc = DateTime.UtcNow,
+            TotalQuantity = 1,
+            DistinctProductCount = 1,
+            CorrelationId = Guid.NewGuid(),
+            ReceivedAtUtc = DateTime.UtcNow
+        };
+        await using (var setup = database.CreateContext())
+        {
+            setup.AddRange(
+                product,
+                order,
+                new OrderSnapshotItem
+                {
+                    OrderId = order.OrderId,
+                    ProductId = product.ProductId,
+                    Quantity = 1
+                });
+            await setup.SaveChangesAsync();
+        }
+
+        await using var context = database.CreateContext();
+        var store = new SqlServerModelTrainingSnapshotStore(context);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => store.GetTrainingSnapshotAsync());
+
+        Assert.Contains(
+            "SubjectId backfill",
+            exception.Message,
+            StringComparison.Ordinal);
     }
 
     private static ProductSnapshot Product(int key)

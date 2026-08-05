@@ -74,6 +74,58 @@ public sealed class RecommendationModelClientTests
             });
     }
 
+    [Fact]
+    public async Task Training_request_contains_subject_id_and_no_customer_id()
+    {
+        string? requestJson = null;
+        var client = CreateClient(new DelegateHandler(request =>
+        {
+            requestJson = request.Content!
+                .ReadAsStringAsync()
+                .GetAwaiter()
+                .GetResult();
+            return new HttpResponseMessage(HttpStatusCode.ServiceUnavailable);
+        }));
+        var subjectId = $"v1.{new string('A', 43)}";
+
+        await client.TrainAsync(new RecommendationModelTrainingRequest(
+            "tfidf-test-v1",
+            Guid.NewGuid(),
+            [
+                new RecommendationModelProductRequest(
+                    SourceId,
+                    Guid.NewGuid(),
+                    Guid.NewGuid(),
+                    "Product",
+                    null,
+                    "Piece",
+                    1m,
+                    10m,
+                    true,
+                    true)
+            ],
+            [
+                new RecommendationModelOrderInteractionRequest(
+                    Guid.NewGuid(),
+                    subjectId,
+                    [
+                        new RecommendationModelOrderInteractionItemRequest(
+                            SourceId,
+                            1)
+                    ])
+            ]));
+
+        Assert.NotNull(requestJson);
+        Assert.Contains(
+            $"\"subjectId\":\"{subjectId}\"",
+            requestJson,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "customerId",
+            requestJson,
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(HttpStatusCode.ServiceUnavailable)]
     [InlineData(HttpStatusCode.BadGateway)]

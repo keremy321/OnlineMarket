@@ -902,6 +902,7 @@ Minimal confirmed market-order snapshot for popularity, affinity, and personal p
 | `OrderId` | `uniqueidentifier` | No | — | Primary key; copied market Order ID |
 | `OrderNumber` | `nvarchar(32)` | No | — | Required, unique |
 | `CustomerId` | `uniqueidentifier` | No | — | External market Customer ID |
+| `SubjectId` | `varchar(64)` | Yes | — | Versioned pseudonymous recommendation subject; nullable only for controlled initial backfill |
 | `OccurredAtUtc` | `datetime2(3)` | No | — | Confirmed order time |
 | `TotalQuantity` | `int` | No | — | > 0; calculated by consumer |
 | `DistinctProductCount` | `int` | No | — | > 0; calculated by consumer |
@@ -913,6 +914,7 @@ Minimal confirmed market-order snapshot for popularity, affinity, and personal p
 - `UX_OrderSnapshots_OrderNumber (unique)`
 - `UX_OrderSnapshots_CorrelationId (unique)`
 - `IX_OrderSnapshots_CustomerId_OccurredAtUtc (OccurredAtUtc descending)`
+- `IX_OrderSnapshots_SubjectId_OccurredAtUtc (SubjectId, OccurredAtUtc descending)`, filtered to `SubjectId IS NOT NULL`
 - `IX_OrderSnapshots_OccurredAtUtc`
 
 **Check constraints**
@@ -924,6 +926,8 @@ Minimal confirmed market-order snapshot for popularity, affinity, and personal p
 
 - Persist only confirmed orders.
 - No contact, address, payment, or financial line data.
+- Derive `SubjectId` only inside `Recommendation.Api` by the versioned keyed-HMAC contract. New ingestions require it; model training rejects any missing or malformed value.
+- Direct `CustomerId`, the derivation key, and customer-to-subject mappings must not enter Python requests, artifacts, or logs.
 
 
 ### `OrderSnapshotItems`
@@ -1856,7 +1860,7 @@ Stored replay result for every state-changing Mock ERP request.
 | Business concept | Authoritative ID | Copies in other databases |
 |---|---|---|
 | Product | `OnlineMarketDb.Products.Id` | `RecommendationDb.ProductSnapshots.ProductId`, `MockErpDb.ErpStocks.ExternalProductId`, ERP line/movement external IDs |
-| Customer | `OnlineMarketDb.Customers.Id` | Recommendation order customer ID, Integration snapshots/links, `MockErpDb.ErpCustomers.ExternalCustomerId` |
+| Customer | `OnlineMarketDb.Customers.Id` | Recommendation order customer ID and separately derived pseudonymous `SubjectId`, Integration snapshots/links, `MockErpDb.ErpCustomers.ExternalCustomerId` |
 | Order | `OnlineMarketDb.Orders.Id` | `RecommendationDb.OrderSnapshots.OrderId`, `IntegrationDb.IntegrationBatches.MarketOrderId`, `MockErpDb.ErpOrders.ExternalOrderId` |
 | Event | `OnlineMarketDb.OutboxMessages.EventId` | Recommendation/Integration `ProcessedEvents.EventId` |
 | Correlation | `OnlineMarketDb.Orders.CorrelationId` | events, batches, attempts, HTTP headers, structured logs |
@@ -1942,7 +1946,7 @@ Before opening side effects, verify every referenced ProductSnapshot exists.
 
 Then one transaction inserts:
 
-- OrderSnapshot,
+- OrderSnapshot, including the internally derived `SubjectId`,
 - all OrderSnapshotItems,
 - ProcessedEvent.
 
@@ -1952,6 +1956,10 @@ If a snapshot is missing:
 - return `Recommendation.ProductSnapshotMissing`,
 - HTTP 409,
 - retryable `true`.
+
+`OrderConfirmedForRecommendationV1` remains unchanged: it carries the market
+`CustomerId`, and `Recommendation.Api` derives `SubjectId` before opening the
+store transaction. Derivation failure writes none of the three records.
 
 ## 10.6 Recommendation recalculation transaction
 
