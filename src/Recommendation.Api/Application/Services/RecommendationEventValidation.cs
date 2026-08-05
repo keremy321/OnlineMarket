@@ -23,7 +23,8 @@ public sealed class RecommendationEventValidator
         var normalized = request with
         {
             Sku = request.Sku?.Trim(),
-            Name = request.Name?.Trim()
+            Name = request.Name?.Trim(),
+            Description = NormalizeOptionalString(request.Description)
         };
         var errors = CreateErrors();
 
@@ -39,6 +40,11 @@ public sealed class RecommendationEventValidator
         RequiredGuid(errors, nameof(request.ProductId), normalized.ProductId);
         RequiredString(errors, nameof(request.Sku), normalized.Sku, 64);
         RequiredString(errors, nameof(request.Name), normalized.Name, 200);
+        OptionalString(
+            errors,
+            nameof(request.Description),
+            normalized.Description,
+            2000);
         RequiredGuid(errors, nameof(request.CategoryId), normalized.CategoryId);
         RequiredGuid(errors, nameof(request.BrandId), normalized.BrandId);
 
@@ -246,6 +252,27 @@ public sealed class RecommendationEventValidator
             AddError(errors, path, $"{path} is required.");
         }
         else if (value.Length > maximumLength)
+        {
+            AddError(
+                errors,
+                path,
+                $"{path} must not exceed {maximumLength} characters.");
+        }
+    }
+
+    private static string? NormalizeOptionalString(string? value)
+    {
+        var trimmed = value?.Trim();
+        return string.IsNullOrWhiteSpace(trimmed) ? null : trimmed;
+    }
+
+    private static void OptionalString(
+        Dictionary<string, List<string>> errors,
+        string path,
+        string? value,
+        int maximumLength)
+    {
+        if (value is not null && value.Length > maximumLength)
         {
             AddError(
                 errors,

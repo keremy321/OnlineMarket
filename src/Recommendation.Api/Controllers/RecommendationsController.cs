@@ -15,7 +15,9 @@ namespace Recommendation.Api.Controllers;
 public sealed class RecommendationsController(
     IPopularityRecommendationService popularityService,
     IFrequentlyBoughtTogetherRecommendationService fbtService,
-    ICartCompletionRecommendationService cartCompletionService)
+    ICartCompletionRecommendationService cartCompletionService,
+    ISimilarRecommendationService similarService,
+    IRecommendationModelOrchestrationService modelOrchestrationService)
     : ControllerBase
 {
     [HttpGet("popular")]
@@ -63,6 +65,52 @@ public sealed class RecommendationsController(
             request.Limit,
             cancellationToken);
         return Ok(items.Select(MapCartCompletionRecommendation).ToArray());
+    }
+
+    [HttpGet("similar/{productId:guid}")]
+    [ProducesResponseType<IReadOnlyList<SimilarRecommendationResponse>>(
+        StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<SimilarRecommendationResponse>>>
+        GetSimilar(
+            Guid productId,
+            [FromQuery(Name = "limit"), Range(1, int.MaxValue)] int? limit,
+            CancellationToken cancellationToken)
+    {
+        var items = await similarService.GetAsync(
+            productId,
+            limit,
+            cancellationToken);
+        return Ok(items.Select(MapSimilarRecommendation).ToArray());
+    }
+
+    [HttpPost("recalculate-models")]
+    [ProducesResponseType<RecommendationModelRecalculationResponse>(
+        StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(
+        StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> RecalculateModels(
+        CancellationToken cancellationToken)
+    {
+        var result = await modelOrchestrationService.RecalculateAsync(
+            cancellationToken);
+        if (result.Outcome != RecommendationModelClientOutcome.Succeeded
+            || result.Metadata is null)
+        {
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new ApiErrorResponse(
+                    "RecommendationModel.Unavailable",
+                    "Recommendation model training is currently unavailable.",
+                    true));
+        }
+
+        return Ok(new RecommendationModelRecalculationResponse(
+            result.Metadata.ModelVersion,
+            "Succeeded",
+            result.Metadata.TrainedAtUtc,
+            result.Metadata.ProductCount,
+            result.Metadata.InputHash,
+            result.Metadata.Algorithm));
     }
 
     [HttpPost("recalculate")]
@@ -160,5 +208,27 @@ public sealed class RecommendationsController(
                 item.SupportingCartProductCount,
                 item.Confidence,
                 item.Lift));
+    }
+
+    private static SimilarRecommendationResponse MapSimilarRecommendation(
+        SimilarRecommendationItem item)
+    {
+        return new SimilarRecommendationResponse(
+            item.ProductId,
+            item.Score,
+            nameof(RecommendationType.Similar),
+            item.RankingSource == SimilarRankingSource.PythonTfidf
+                ? "Similarity.TfidfContent"
+                : "Similarity.DeterministicFallback",
+            item.RankingSource == SimilarRankingSource.PythonTfidf
+                ? "Similar product based on content features."
+                : "Similar product based on local content attributes.",
+            new SimilarityMetricsResponse(
+                item.TfidfScore,
+                item.PopularityScore,
+                item.FrequentlyBoughtTogetherScore,
+                item.FallbackScore,
+                item.RankingSource.ToString(),
+                item.ModelVersion));
     }
 }

@@ -373,6 +373,7 @@ public sealed class CatalogService : ICatalogService
             product.Id,
             product.Sku,
             product.Name,
+            product.Description,
             product.CategoryId,
             parentCategoryId,
             product.BrandId,

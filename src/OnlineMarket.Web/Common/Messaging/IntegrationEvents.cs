@@ -16,6 +16,7 @@ public sealed record ProductSnapshotChangedV1(
     Guid ProductId,
     string Sku,
     string Name,
+    string? Description,
     Guid CategoryId,
     Guid? ParentCategoryId,
     Guid BrandId,

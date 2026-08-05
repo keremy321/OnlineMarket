@@ -61,6 +61,9 @@ public sealed class CatalogTransactionTests
         using var document = JsonDocument.Parse(message.Payload);
         var root = document.RootElement;
         Assert.Equal("Updated product", root.GetProperty("Name").GetString());
+        Assert.Equal(
+            product.Description,
+            root.GetProperty("Description").GetString());
         Assert.Equal(75m, root.GetProperty("Price").GetDecimal());
         Assert.False(root.GetProperty("IsActive").GetBoolean());
         Assert.Equal(

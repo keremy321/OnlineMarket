@@ -18,7 +18,13 @@ internal sealed class RecommendationWebApplicationFactory(
             var values = new Dictionary<string, string?>
             {
                 ["ConnectionStrings:RecommendationDb"] = connectionString,
-                ["Security:ApiKey"] = apiKey
+                ["Security:ApiKey"] = apiKey,
+                ["Services:RecommendationModelService:BaseAddress"] =
+                    "https://recommendation-model-service.test",
+                ["Services:RecommendationModelService:ApiKey"] =
+                    "test-only-model-service-key",
+                ["Services:RecommendationModelService:Timeout"] =
+                    "00:00:01"
             };
             if (additionalConfiguration is not null)
             {

@@ -1,0 +1,20 @@
+include:
+  - path: docker-compose.database.yml
+
+services:
+  recommendation-model-service:
+    build:
+      context: ../src/Recommendation.ModelService
+      dockerfile: Dockerfile
+    container_name: online-market-recommendation-model-service
+    restart: unless-stopped
+    environment:
+      RECOMMENDATION_MODEL_API_KEY: ${RECOMMENDATION_MODEL_API_KEY:?RECOMMENDATION_MODEL_API_KEY is required}
+      RECOMMENDATION_MODEL_ARTIFACT_DIRECTORY: /app/artifacts
+    ports:
+      - "8085:8000"
+    volumes:
+      - recommendation_model_artifacts:/app/artifacts
+
+volumes:
+  recommendation_model_artifacts:

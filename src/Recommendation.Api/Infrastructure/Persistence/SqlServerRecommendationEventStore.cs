@@ -288,6 +288,7 @@ public sealed class SqlServerRecommendationEventStore(
             ProductId = intake.Event.ProductId,
             Sku = intake.Event.Sku!,
             Name = intake.Event.Name!,
+            Description = intake.Event.Description,
             CategoryId = intake.Event.CategoryId,
             ParentCategoryId = intake.Event.ParentCategoryId,
             BrandId = intake.Event.BrandId,
@@ -307,6 +308,7 @@ public sealed class SqlServerRecommendationEventStore(
     {
         product.Sku = intake.Event.Sku!;
         product.Name = intake.Event.Name!;
+        product.Description = intake.Event.Description;
         product.CategoryId = intake.Event.CategoryId;
         product.ParentCategoryId = intake.Event.ParentCategoryId;
         product.BrandId = intake.Event.BrandId;

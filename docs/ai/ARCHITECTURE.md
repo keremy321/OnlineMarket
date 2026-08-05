@@ -108,6 +108,20 @@ Two workers must not claim the same message.
 - Allow only one full recalculation at a time.
 - Keep previous valid results if recalculation fails.
 
+## Recommendation Model Service
+
+- `Recommendation.Api` remains the public façade and owns all RecommendationDb
+  access.
+- The internal Python `Recommendation.ModelService` receives explicit,
+  authenticated, PII-free training snapshots over HTTP and never accesses a
+  database directly.
+- The first versioned artifact is deterministic TF-IDF product-content
+  similarity. C# popularity, affinity, cart completion, and deterministic
+  content similarity remain available for hybrid inputs and fallback.
+- Current `CustomerId` is not exported to Python. User-personalized implicit
+  ALS is deferred until a separate contract supplies an anonymized stable
+  `SubjectId`.
+
 ## ERP Integration
 
 Event intake saves:

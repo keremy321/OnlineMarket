@@ -41,7 +41,31 @@ public sealed record CartCompletionMetricsResponse(
     decimal Confidence,
     decimal Lift);
 
+public sealed record SimilarRecommendationResponse(
+    Guid ProductId,
+    decimal Score,
+    string RecommendationType,
+    string ReasonCode,
+    string ReasonText,
+    SimilarityMetricsResponse Metrics);
+
+public sealed record SimilarityMetricsResponse(
+    decimal? TfidfScore,
+    decimal PopularityScore,
+    decimal FrequentlyBoughtTogetherScore,
+    decimal? FallbackScore,
+    string RankingSource,
+    string? ModelVersion);
+
 public sealed record RecommendationRecalculationResponse(
     Guid RunId,
     string Status,
     int OutputRecordCount);
+
+public sealed record RecommendationModelRecalculationResponse(
+    string ModelVersion,
+    string Status,
+    DateTime TrainedAtUtc,
+    int ProductCount,
+    string InputHash,
+    string Algorithm);

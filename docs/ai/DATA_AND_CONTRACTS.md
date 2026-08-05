@@ -87,6 +87,7 @@ CorrelationId
 ProductId
 Sku
 Name
+Description?
 CategoryId
 ParentCategoryId?
 BrandId
@@ -115,6 +116,31 @@ Items[] { ProductId, Quantity }
 ```
 
 Must not contain address, email, phone, payment, or financial details.
+
+### Recommendation.ModelService internal V1
+
+`Recommendation.Api` sends an authenticated training request containing model
+version/correlation data, product content snapshots, and order baskets with
+only product IDs and quantities. It must not send `CustomerId` or customer PII.
+Python returns recommendation-owned IDs/scores and model artifact metadata.
+The internal endpoints are:
+
+```text
+GET  /health
+POST /api/v1/models/train
+POST /api/v1/models/similar
+GET  /api/v1/models/current
+```
+
+`Recommendation.Api` exposes the authenticated façade endpoints:
+
+```text
+POST /api/v1/recommendations/recalculate-models
+GET  /api/v1/recommendations/similar/{productId}?limit={value}
+```
+
+The stored market `CustomerId` is not an anonymized model subject. Implicit ALS
+personalization requires a separately approved stable `SubjectId` contract.
 
 ### OrderReadyForErpV1
 
