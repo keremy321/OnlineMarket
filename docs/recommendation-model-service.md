@@ -22,7 +22,10 @@ stable versioned `SubjectId` from its stored market `CustomerId` using
 HMAC-SHA256 and sends only that pseudonymous opaque value in Python order
 interactions. Python never receives the direct identifier or derivation key.
 The derivation, initial backfill, and rotation contract is documented in
-`docs/recommendation-subject-id.md`. ALS implementation remains a separate task.
+`docs/recommendation-subject-id.md`. The model service aggregates SubjectId and
+product interactions and trains a configured implicit-feedback ALS component
+alongside TF-IDF. Insufficient ALS data leaves TF-IDF active and reports the ALS
+component as `InsufficientData`.
 
 ## Configuration
 
@@ -41,6 +44,16 @@ Configure Python with the same local-only key:
 ```text
 RECOMMENDATION_MODEL_API_KEY=<LOCAL_ONLY_SECRET>
 RECOMMENDATION_MODEL_ARTIFACT_DIRECTORY=artifacts
+RECOMMENDATION_ALS_FACTORS=32
+RECOMMENDATION_ALS_REGULARIZATION=0.05
+RECOMMENDATION_ALS_ITERATIONS=20
+RECOMMENDATION_ALS_ALPHA=20
+RECOMMENDATION_ALS_RANDOM_SEED=42
+RECOMMENDATION_ALS_DEFAULT_LIMIT=8
+RECOMMENDATION_ALS_MAXIMUM_LIMIT=50
+RECOMMENDATION_ALS_MINIMUM_SUBJECTS=2
+RECOMMENDATION_ALS_MINIMUM_PRODUCTS=2
+RECOMMENDATION_ALS_MINIMUM_INTERACTIONS=3
 ```
 
 Never put a real key in `appsettings*.json`, Compose source, logs, issues, or
@@ -62,8 +75,14 @@ volume persists versioned artifacts across container replacement. Training is
 triggered through authenticated `Recommendation.Api` endpoint
 `POST /api/v1/recommendations/recalculate-models`; clients query similar items
 through `GET /api/v1/recommendations/similar/{productId}`.
+Personalized inference uses
+`GET /api/v1/recommendations/customers/{customerId}`; Recommendation.Api derives
+the pseudonymous subject internally and calls
+`POST /api/v1/models/personalized`.
 
 The C# façade makes no automatic HTTP retries. Three consecutive failures open
 a 30-second circuit, preventing retry storms. Timeout, connection, unavailable
 model, and invalid response outcomes use the deterministic C# content fallback
 for user-facing inference.
+Personalized failures, cold-start subjects, and TF-IDF-only artifacts use the
+deterministic C# category/brand/popularity fallback through the same circuit.

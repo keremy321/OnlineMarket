@@ -63,9 +63,29 @@ public sealed record RecommendationModelMetadataResponse(
     Guid CorrelationId,
     DateTime TrainedAtUtc,
     int ProductCount,
+    int SubjectCount,
+    int InteractionCount,
     string InputHash,
     string Algorithm,
+    IReadOnlyList<string> AlgorithmComponents,
+    RecommendationModelComponentStatusesResponse Components,
+    RecommendationModelAlsParametersResponse AlsParameters,
     IReadOnlyDictionary<string, string> LibraryVersions);
+
+public sealed record RecommendationModelComponentStatusesResponse(
+    RecommendationModelComponentStatusResponse Tfidf,
+    RecommendationModelComponentStatusResponse Als);
+
+public sealed record RecommendationModelComponentStatusResponse(
+    string Status,
+    int TrainingDurationMilliseconds);
+
+public sealed record RecommendationModelAlsParametersResponse(
+    int Factors,
+    decimal Regularization,
+    int Iterations,
+    decimal Alpha,
+    int RandomSeed);
 
 public sealed record RecommendationModelSimilarRequest(
     Guid ProductId,
@@ -79,6 +99,24 @@ public sealed record RecommendationModelSimilarClientResponse(
 public sealed record RecommendationModelSimilarItemResponse(
     Guid ProductId,
     decimal TfidfScore);
+
+public sealed record RecommendationModelPersonalizedRequest(
+    string SubjectId,
+    int Limit,
+    bool ExcludePreviouslyPurchased);
+
+public sealed record RecommendationModelPersonalizedClientResponse(
+    string ModelVersion,
+    string Strategy,
+    IReadOnlyList<RecommendationModelPersonalizedItemResponse>
+        Recommendations);
+
+public sealed record RecommendationModelPersonalizedItemResponse(
+    Guid ProductId,
+    decimal Score,
+    decimal? Confidence,
+    string ReasonCode,
+    string ReasonText);
 
 public enum RecommendationModelClientOutcome
 {

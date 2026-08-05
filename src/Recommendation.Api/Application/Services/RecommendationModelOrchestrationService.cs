@@ -18,7 +18,7 @@ public sealed class RecommendationModelOrchestrationService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var request = CreateRequest(
             snapshot,
-            $"tfidf-v1-{now:yyyyMMddHHmmssfff}",
+            $"model-set-v2-{now:yyyyMMddHHmmssfff}",
             Guid.NewGuid());
         var result = await modelClient.TrainAsync(request, cancellationToken);
         return new RecommendationModelRecalculationResult(

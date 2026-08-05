@@ -191,5 +191,14 @@ public sealed class SimilarRecommendationServiceTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<RecommendationModelClientResult<
+            RecommendationModelPersonalizedClientResponse>>
+            GetPersonalizedAsync(
+                RecommendationModelPersonalizedRequest request,
+                CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
     }
 }

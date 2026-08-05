@@ -52,6 +52,21 @@ public sealed class RecommendationModelClient(
                 cancellationToken);
     }
 
+    public Task<RecommendationModelClientResult<
+        RecommendationModelPersonalizedClientResponse>> GetPersonalizedAsync(
+            RecommendationModelPersonalizedRequest request,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return SendAsync<
+            RecommendationModelPersonalizedRequest,
+            RecommendationModelPersonalizedClientResponse>(
+                "/api/v1/models/personalized",
+                request,
+                response => IsValidPersonalizedResponse(request, response),
+                cancellationToken);
+    }
+
     private async Task<RecommendationModelClientResult<TResponse>> SendAsync<
         TRequest,
         TResponse>(
@@ -170,9 +185,31 @@ public sealed class RecommendationModelClient(
             && response.Metadata.ModelVersion == request.ModelVersion
             && response.Metadata.CorrelationId == request.CorrelationId
             && response.Metadata.ProductCount == request.Products.Count
+            && response.Metadata.SubjectCount
+                == request.Interactions
+                    .Select(interaction => interaction.SubjectId)
+                    .Distinct(StringComparer.Ordinal)
+                    .Count()
+            && response.Metadata.InteractionCount
+                == request.Interactions.Sum(interaction =>
+                    interaction.Items.Count)
             && response.Metadata.TrainedAtUtc.Kind == DateTimeKind.Utc
             && response.Metadata.InputHash.Length == 64
             && !string.IsNullOrWhiteSpace(response.Metadata.Algorithm)
+            && response.Metadata.AlgorithmComponents is not null
+            && response.Metadata.AlgorithmComponents.Count > 0
+            && response.Metadata.Components is not null
+            && IsValidComponentStatus(response.Metadata.Components.Tfidf)
+            && IsValidComponentStatus(response.Metadata.Components.Als)
+            && response.Metadata.Components.Tfidf.Status == "Succeeded"
+            && response.Metadata.AlsParameters is
+            {
+                Factors: > 0,
+                Regularization: > 0m,
+                Iterations: > 0,
+                Alpha: > 0m,
+                RandomSeed: >= 0
+            }
             && response.Metadata.LibraryVersions is not null;
     }
 
@@ -214,5 +251,58 @@ public sealed class RecommendationModelClient(
         }
 
         return true;
+    }
+
+    private static bool IsValidPersonalizedResponse(
+        RecommendationModelPersonalizedRequest request,
+        RecommendationModelPersonalizedClientResponse response)
+    {
+        if (string.IsNullOrWhiteSpace(response.ModelVersion)
+            || response.Strategy is not (
+                "implicit_als" or "cold_start_unavailable")
+            || response.Recommendations is null
+            || response.Recommendations.Count > request.Limit
+            || response.Strategy == "cold_start_unavailable"
+                && response.Recommendations.Count != 0)
+        {
+            return false;
+        }
+
+        var productIds = new HashSet<Guid>();
+        decimal? previousScore = null;
+        Guid? previousProductId = null;
+        foreach (var item in response.Recommendations)
+        {
+            if (item.ProductId == Guid.Empty
+                || item.Score is < 0m or > 1m
+                || item.Confidence is < 0m or > 1m
+                || string.IsNullOrWhiteSpace(item.ReasonCode)
+                || string.IsNullOrWhiteSpace(item.ReasonText)
+                || !productIds.Add(item.ProductId))
+            {
+                return false;
+            }
+
+            if (previousScore.HasValue
+                && (item.Score > previousScore.Value
+                    || item.Score == previousScore.Value
+                    && item.ProductId.CompareTo(previousProductId!.Value) < 0))
+            {
+                return false;
+            }
+
+            previousScore = item.Score;
+            previousProductId = item.ProductId;
+        }
+
+        return true;
+    }
+
+    private static bool IsValidComponentStatus(
+        RecommendationModelComponentStatusResponse? status)
+    {
+        return status is not null
+            && status.Status is "Succeeded" or "InsufficientData"
+            && status.TrainingDurationMilliseconds >= 0;
     }
 }

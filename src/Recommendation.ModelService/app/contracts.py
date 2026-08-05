@@ -20,13 +20,15 @@ NonBlankText = Annotated[
     StringConstraints(strip_whitespace=True, min_length=1),
 ]
 
+SUBJECT_ID_PATTERN = r"^v[1-9][0-9]{0,14}\.[A-Za-z0-9_-]{43}$"
+
 SubjectId = Annotated[
     str,
     StringConstraints(
         strip_whitespace=True,
         min_length=46,
         max_length=64,
-        pattern=r"^v[1-9][0-9]{0,14}\.[A-Za-z0-9_-]{43}$",
+        pattern=SUBJECT_ID_PATTERN,
     ),
 ]
 
@@ -154,13 +156,41 @@ class SimilarProductsRequest(StrictContract):
         return value
 
 
+class ModelComponentState(StrEnum):
+    SUCCEEDED = "Succeeded"
+    INSUFFICIENT_DATA = "InsufficientData"
+
+
+class ModelComponentStatus(StrictContract):
+    status: ModelComponentState
+    trainingDurationMilliseconds: int = Field(ge=0)
+
+
+class ModelComponentStatuses(StrictContract):
+    tfidf: ModelComponentStatus
+    als: ModelComponentStatus
+
+
+class AlsParameters(StrictContract):
+    factors: int = Field(gt=0)
+    regularization: float = Field(gt=0)
+    iterations: int = Field(gt=0)
+    alpha: float = Field(gt=0)
+    randomSeed: int = Field(ge=0)
+
+
 class ArtifactMetadata(StrictContract):
     modelVersion: str
     correlationId: UUID
     trainedAtUtc: datetime
     productCount: int
+    subjectCount: int = Field(default=0, ge=0)
+    interactionCount: int = Field(default=0, ge=0)
     inputHash: str
     algorithm: str
+    algorithmComponents: list[str] = Field(default_factory=list)
+    components: ModelComponentStatuses | None = None
+    alsParameters: AlsParameters | None = None
     libraryVersions: dict[str, str]
 
 
@@ -178,6 +208,26 @@ class SimilarProductsResponse(StrictContract):
     modelVersion: str
     sourceProductId: UUID
     items: list[SimilarProductItem]
+
+
+class PersonalizedRecommendationsRequest(StrictContract):
+    subjectId: SubjectId
+    limit: int | None = Field(default=None, ge=1, le=1_000)
+    excludePreviouslyPurchased: bool = True
+
+
+class PersonalizedRecommendationItem(StrictContract):
+    productId: UUID
+    score: float = Field(ge=0, le=1)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    reasonCode: str
+    reasonText: str
+
+
+class PersonalizedRecommendationsResponse(StrictContract):
+    modelVersion: str
+    strategy: str
+    recommendations: list[PersonalizedRecommendationItem]
 
 
 class ApiErrorResponse(StrictContract):

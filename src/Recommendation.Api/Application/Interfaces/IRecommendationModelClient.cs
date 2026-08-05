@@ -13,4 +13,9 @@ public interface IRecommendationModelClient
         RecommendationModelSimilarClientResponse>> GetSimilarAsync(
             RecommendationModelSimilarRequest request,
             CancellationToken cancellationToken = default);
+
+    Task<RecommendationModelClientResult<
+        RecommendationModelPersonalizedClientResponse>> GetPersonalizedAsync(
+            RecommendationModelPersonalizedRequest request,
+            CancellationToken cancellationToken = default);
 }

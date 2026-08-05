@@ -67,6 +67,12 @@ builder.Services.AddScoped<
 builder.Services.AddScoped<
     ISimilarRecommendationService,
     SimilarRecommendationService>();
+builder.Services.AddScoped<
+    IPersonalizedRecommendationStore,
+    SqlServerPersonalizedRecommendationStore>();
+builder.Services.AddScoped<
+    IPersonalizedRecommendationService,
+    PersonalizedRecommendationService>();
 builder.Services.AddSingleton<RecommendationEventValidator>();
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<RecommendationModelCircuitBreaker>();
@@ -94,6 +100,14 @@ builder.Services
     .Validate(
         options => options.IsValid(),
         $"Configuration section '{SimilarRecommendationOptions.SectionName}' is invalid.")
+    .ValidateOnStart();
+builder.Services
+    .AddOptions<PersonalizedRecommendationOptions>()
+    .Bind(builder.Configuration.GetSection(
+        PersonalizedRecommendationOptions.SectionName))
+    .Validate(
+        options => options.IsValid(),
+        $"Configuration section '{PersonalizedRecommendationOptions.SectionName}' is invalid.")
     .ValidateOnStart();
 builder.Services
     .AddOptions<RecommendationModelServiceOptions>()

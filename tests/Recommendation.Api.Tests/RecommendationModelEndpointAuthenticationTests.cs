@@ -11,6 +11,9 @@ public sealed class RecommendationModelEndpointAuthenticationTests
         "/api/v1/recommendations/similar/00000000-0000-0000-0000-000000000001",
         "GET")]
     [InlineData("/api/v1/recommendations/subjects/backfill", "POST")]
+    [InlineData(
+        "/api/v1/recommendations/customers/00000000-0000-0000-0000-000000000001",
+        "GET")]
     public async Task Model_facade_endpoints_require_authentication(
         string path,
         string method)

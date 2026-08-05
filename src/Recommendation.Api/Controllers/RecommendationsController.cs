@@ -17,6 +17,7 @@ public sealed class RecommendationsController(
     IFrequentlyBoughtTogetherRecommendationService fbtService,
     ICartCompletionRecommendationService cartCompletionService,
     ISimilarRecommendationService similarService,
+    IPersonalizedRecommendationService personalizedService,
     IRecommendationModelOrchestrationService modelOrchestrationService)
     : ControllerBase
 {
@@ -32,6 +33,25 @@ public sealed class RecommendationsController(
             limit,
             cancellationToken);
         return Ok(items.Select(MapRecommendation).ToArray());
+    }
+
+    [HttpGet("customers/{customerId:guid}")]
+    [ProducesResponseType<IReadOnlyList<PersonalizedRecommendationResponse>>(
+        StatusCodes.Status200OK)]
+    public async Task<ActionResult<
+        IReadOnlyList<PersonalizedRecommendationResponse>>> GetPersonalized(
+            Guid customerId,
+            [FromQuery(Name = "limit"), Range(1, int.MaxValue)] int? limit,
+            [FromQuery(Name = "excludePreviouslyPurchased")]
+            bool excludePreviouslyPurchased = true,
+            CancellationToken cancellationToken = default)
+    {
+        var items = await personalizedService.GetAsync(
+            customerId,
+            limit,
+            excludePreviouslyPurchased,
+            cancellationToken);
+        return Ok(items.Select(MapPersonalizedRecommendation).ToArray());
     }
 
     [HttpGet("fbt/{productId:guid}")]
@@ -109,8 +129,26 @@ public sealed class RecommendationsController(
             "Succeeded",
             result.Metadata.TrainedAtUtc,
             result.Metadata.ProductCount,
+            result.Metadata.SubjectCount,
+            result.Metadata.InteractionCount,
             result.Metadata.InputHash,
-            result.Metadata.Algorithm));
+            result.Metadata.Algorithm,
+            result.Metadata.AlgorithmComponents,
+            new RecommendationModelComponentStatusesContract(
+                new RecommendationModelComponentStatusContract(
+                    result.Metadata.Components.Tfidf.Status,
+                    result.Metadata.Components.Tfidf
+                        .TrainingDurationMilliseconds),
+                new RecommendationModelComponentStatusContract(
+                    result.Metadata.Components.Als.Status,
+                    result.Metadata.Components.Als
+                        .TrainingDurationMilliseconds)),
+            new RecommendationModelAlsParametersContract(
+                result.Metadata.AlsParameters.Factors,
+                result.Metadata.AlsParameters.Regularization,
+                result.Metadata.AlsParameters.Iterations,
+                result.Metadata.AlsParameters.Alpha,
+                result.Metadata.AlsParameters.RandomSeed)));
     }
 
     [HttpPost("recalculate")]
@@ -228,6 +266,27 @@ public sealed class RecommendationsController(
                 item.PopularityScore,
                 item.FrequentlyBoughtTogetherScore,
                 item.FallbackScore,
+                item.RankingSource.ToString(),
+                item.ModelVersion));
+    }
+
+    private static PersonalizedRecommendationResponse
+        MapPersonalizedRecommendation(PersonalizedRecommendationItem item)
+    {
+        var python = item.RankingSource
+            == PersonalizedRankingSource.PythonImplicitAls;
+        return new PersonalizedRecommendationResponse(
+            item.ProductId,
+            item.Score,
+            nameof(RecommendationType.Personalized),
+            python
+                ? "Personalized.ImplicitAls"
+                : "Personalized.PreferenceFallback",
+            python
+                ? "Recommended from pseudonymous purchase interactions."
+                : "Recommended from purchase preferences and popularity.",
+            new PersonalizedMetricsResponse(
+                item.Confidence,
                 item.RankingSource.ToString(),
                 item.ModelVersion));
     }

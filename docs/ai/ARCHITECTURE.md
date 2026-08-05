@@ -122,6 +122,13 @@ Two workers must not claim the same message.
   versioned HMAC-SHA256 and exports only that opaque value for order
   interactions. Direct market `CustomerId` and the derivation key never enter
   Python contracts, artifacts, or logs.
+- The Python model set combines TF-IDF with an optional implicit-feedback ALS
+  component. Deterministic subject/product mappings, factors, and purchased
+  product history are versioned atomically; legacy TF-IDF-only artifacts remain
+  valid.
+- Personalized façade requests derive `SubjectId` inside Recommendation.Api.
+  Python/model/circuit failures and unknown subjects use a deterministic local
+  category, brand, and popularity fallback.
 
 ## ERP Integration
 
