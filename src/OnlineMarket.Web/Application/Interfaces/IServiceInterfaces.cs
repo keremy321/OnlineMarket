@@ -75,7 +75,16 @@ public interface IAdminQueryService
 public interface IRecommendationClient
 {
     Task<List<RecommendationItemDto>> GetPopularRecommendationsAsync(int count = 5);
-    Task<List<RecommendationItemDto>> GetFrequentlyBoughtTogetherAsync(Guid productId, int count = 5);
+
+    /// <param name="cancellationToken">
+    /// Propagated from the caller (e.g. the AI assistant's chat request) and linked with
+    /// the client's internal read-timeout budget. A caller-initiated cancellation is
+    /// rethrown; an internal timeout degrades to an empty result instead.
+    /// </param>
+    Task<List<RecommendationItemDto>> GetFrequentlyBoughtTogetherAsync(
+        Guid productId,
+        int count = 5,
+        CancellationToken cancellationToken = default);
     Task<List<RecommendationItemDto>> GetSimilarProductsAsync(Guid productId, int count = 5);
     Task<List<RecommendationItemDto>> GetPersonalizedRecommendationsAsync(Guid customerId, int count = 5);
     Task<List<RecommendationItemDto>> GetCartCompletionRecommendationsAsync(List<Guid> productIds, int count = 5);

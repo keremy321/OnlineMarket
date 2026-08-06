@@ -1,55 +1,100 @@
-@Html.AntiForgeryToken()
+@{
+    // Safe page context only: the current route's product id (already public in the URL)
+    // and the page type. The server re-validates both before using them.
+    var routeController = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+    var routeAction = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+    var currentProductId = string.Empty;
+    if (string.Equals(routeController, "Catalog", StringComparison.OrdinalIgnoreCase)
+        && string.Equals(routeAction, "Details", StringComparison.OrdinalIgnoreCase)
+        && Guid.TryParse(ViewContext.RouteData.Values["id"]?.ToString(), out var routeProductId)
+        && routeProductId != Guid.Empty)
+    {
+        currentProductId = routeProductId.ToString("D");
+    }
+    var pageType = routeController.ToLowerInvariant();
+}
 
-<!-- AI Support Floating Launcher Button -->
-<button id="aiWidgetLauncher" class="ai-widget-launcher" aria-label="AI Destek Asistanı" title="AI Destek Canlı Asistan">
-    <i class="bi bi-robot"></i>
-    <span class="ai-launcher-pulse"></span>
-    <span id="aiLauncherBadge" class="ai-launcher-badge">AI</span>
-</button>
+<div id="aiWidgetRoot"
+     class="ai-widget-root"
+     data-chat-url="@Url.Action("Chat", "AiSupport")"
+     data-current-product-id="@currentProductId"
+     data-page-type="@pageType"
+     data-max-length="500">
 
-<!-- AI Support Chat Popup Box -->
-<div id="aiWidgetBox" class="ai-widget-box" role="dialog" aria-labelledby="aiHeaderTitle">
-    <!-- Header -->
-    <div class="ai-widget-header">
-        <div class="ai-header-info">
-            <div class="ai-avatar-wrapper">
-                <i class="bi bi-robot text-white"></i>
-                <span class="ai-online-dot"></span>
+    @Html.AntiForgeryToken()
+
+    <!-- AI Support Floating Launcher Button -->
+    <button id="aiWidgetLauncher"
+            type="button"
+            class="ai-widget-launcher"
+            aria-label="AI destek asistanını aç"
+            aria-expanded="false"
+            aria-controls="aiWidgetBox"
+            title="AI Destek Canlı Asistan">
+        <i class="bi bi-robot" aria-hidden="true"></i>
+        <span class="ai-launcher-pulse" aria-hidden="true"></span>
+        <span id="aiLauncherBadge" class="ai-launcher-badge" aria-hidden="true">AI</span>
+    </button>
+
+    <!-- AI Support Chat Popup Box -->
+    <div id="aiWidgetBox"
+         class="ai-widget-box"
+         role="dialog"
+         aria-modal="false"
+         aria-labelledby="aiHeaderTitle">
+        <!-- Header -->
+        <div class="ai-widget-header">
+            <div class="ai-header-info">
+                <div class="ai-avatar-wrapper">
+                    <i class="bi bi-robot text-white" aria-hidden="true"></i>
+                    <span class="ai-online-dot" aria-hidden="true"></span>
+                </div>
+                <div>
+                    <h6 id="aiHeaderTitle" class="ai-header-title">OnlineMarket AI</h6>
+                    <p class="ai-header-subtitle"><i class="bi bi-stars me-1 text-warning" aria-hidden="true"></i>7/24 Canlı Akıllı Asistan</p>
+                </div>
             </div>
-            <div>
-                <h6 id="aiHeaderTitle" class="ai-header-title">OnlineMarket AI</h6>
-                <p class="ai-header-subtitle"><i class="bi bi-stars me-1 text-warning"></i>7/24 Canlı Akıllı Asistan</p>
+            <div class="ai-header-actions">
+                <button id="aiWidgetClose" type="button" aria-label="Asistanı kapat" title="Kapat">
+                    <i class="bi bi-x-lg" aria-hidden="true"></i>
+                </button>
             </div>
         </div>
-        <div class="ai-header-actions">
-            <button id="aiWidgetClose" type="button" aria-label="Kapat" title="Kapat">
-                <i class="bi bi-x-lg"></i>
+
+        <!-- Messages Container -->
+        <div id="aiChatBody"
+             class="ai-widget-body"
+             role="log"
+             aria-live="polite"
+             aria-relevant="additions"
+             aria-label="Asistan sohbet geçmişi">
+            <div class="ai-message bot">
+                <div class="ai-message-bubble">
+                    Merhaba! Ben <strong>OnlineMarket Akıllı AI Asistanı</strong>.
+                    Ürün önerileri, sipariş takibi, kargo ve iade konularında size yardımcı olabilirim.
+                </div>
+                <div class="ai-suggestions-wrapper">
+                    <button type="button" class="ai-chip">Bana ürün öner</button>
+                    <button type="button" class="ai-chip">En popüler ürünler neler?</button>
+                    <button type="button" class="ai-chip">Kargo ücretleri nedir?</button>
+                    <button type="button" class="ai-chip">Sipariş takibi</button>
+                </div>
+                <div class="ai-message-time">Şimdi</div>
+            </div>
+        </div>
+
+        <!-- Footer Input Area -->
+        <div class="ai-widget-footer">
+            <label class="visually-hidden" for="aiInputField">Asistana mesajınız</label>
+            <input id="aiInputField"
+                   type="text"
+                   class="ai-input-field"
+                   placeholder="Bir soru sorun veya ürün önerisi isteyin..."
+                   autocomplete="off"
+                   maxlength="500" />
+            <button id="aiSendBtn" type="button" class="ai-send-btn" aria-label="Mesajı gönder" title="Gönder">
+                <i class="bi bi-send-fill" aria-hidden="true"></i>
             </button>
         </div>
-    </div>
-
-    <!-- Messages Container -->
-    <div id="aiChatBody" class="ai-widget-body">
-        <div class="ai-message bot">
-            <div class="ai-message-bubble">
-                Merhaba! Ben <strong>OnlineMarket Akıllı AI Asistanı</strong> 🤖<br />
-                Ürün arama, kargo takibi, iade koşulları veya kampanya önerileri hakkında size yardımcı olabilirim. Nasıl yardımcı olabilirim?
-            </div>
-            <div class="ai-suggestions-wrapper">
-                <button type="button" class="ai-chip">Kargo ücretleri nedir?</button>
-                <button type="button" class="ai-chip">Sipariş takibi</button>
-                <button type="button" class="ai-chip">Popüler ürün önerileri</button>
-                <button type="button" class="ai-chip">İade ve Değişim</button>
-            </div>
-            <div class="ai-message-time">Şimdi</div>
-        </div>
-    </div>
-
-    <!-- Footer Input Area -->
-    <div class="ai-widget-footer">
-        <input id="aiInputField" type="text" class="ai-input-field" placeholder="Bir soru sorun veya ürün arayın..." autocomplete="off" maxLength="500" />
-        <button id="aiSendBtn" type="button" class="ai-send-btn" title="Gönder">
-            <i class="bi bi-send-fill"></i>
-        </button>
     </div>
 </div>

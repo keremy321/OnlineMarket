@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using Microsoft.Extensions.Options;
 using OnlineMarket.Web.Application.Interfaces;
 using OnlineMarket.Web.Application.Models;
 
@@ -8,19 +9,35 @@ public class RecommendationApiClient : IRecommendationClient
 {
     private const int SimilarProductLimit = 4;
     private const int PersonalizedProductLimit = 8;
-    private static readonly TimeSpan RecommendationTimeout =
-        TimeSpan.FromSeconds(4);
 
     private readonly HttpClient _httpClient;
     private readonly ILogger<RecommendationApiClient> _logger;
+
+    /// <summary>
+    /// Shared read-timeout budget for Similar, Personalized and FrequentlyBoughtTogether.
+    /// Sourced from <see cref="RecommendationApiClientOptions"/>; falls back to that
+    /// option's default when none is supplied (existing callers that construct this
+    /// client directly, e.g. in tests, are unaffected).
+    /// </summary>
+    private readonly TimeSpan _readTimeout;
 
     private static DateTime _offlineUntilUtc = DateTime.MinValue;
     private static readonly object _lock = new();
 
     public RecommendationApiClient(HttpClient httpClient, ILogger<RecommendationApiClient> logger)
+        : this(httpClient, logger, options: null)
+    {
+    }
+
+    public RecommendationApiClient(
+        HttpClient httpClient,
+        ILogger<RecommendationApiClient> logger,
+        IOptions<RecommendationApiClientOptions>? options)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _readTimeout = options?.Value.EffectiveReadTimeout
+            ?? TimeSpan.FromSeconds(RecommendationApiClientOptions.DefaultReadTimeoutSeconds);
     }
 
     private bool IsCircuitOpen()
@@ -56,14 +73,30 @@ public class RecommendationApiClient : IRecommendationClient
         }
     }
 
-    public async Task<List<RecommendationItemDto>> GetFrequentlyBoughtTogetherAsync(Guid productId, int count = 5)
+    public async Task<List<RecommendationItemDto>> GetFrequentlyBoughtTogetherAsync(
+        Guid productId,
+        int count = 5,
+        CancellationToken cancellationToken = default)
     {
         if (IsCircuitOpen()) return new List<RecommendationItemDto>();
+
+        // Linking preserves caller cancellation (e.g. the shopper closing the chat
+        // panel) while still enforcing the read-timeout budget independently.
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(_readTimeout);
+
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-            var response = await _httpClient.GetFromJsonAsync<List<RecommendationItemDto>>($"/api/v1/recommendations/fbt/{productId}?limit={count}", cts.Token);
+            var response = await _httpClient.GetFromJsonAsync<List<RecommendationItemDto>>(
+                $"/api/v1/recommendations/fbt/{productId}?limit={count}",
+                timeoutCts.Token);
             return response ?? new List<RecommendationItemDto>();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The caller canceled the request; this is not a Recommendation.Api failure,
+            // so it must not open the circuit, log a warning, or be retried.
+            throw;
         }
         catch (Exception ex)
         {
@@ -83,7 +116,7 @@ public class RecommendationApiClient : IRecommendationClient
         var limit = Math.Min(count, SimilarProductLimit);
         try
         {
-            using var cts = new CancellationTokenSource(RecommendationTimeout);
+            using var cts = new CancellationTokenSource(_readTimeout);
             using var response = await _httpClient.GetAsync(
                 $"/api/v1/recommendations/similar/{productId:D}?limit={limit}",
                 cts.Token);
@@ -150,7 +183,7 @@ public class RecommendationApiClient : IRecommendationClient
         var limit = Math.Min(count, PersonalizedProductLimit);
         try
         {
-            using var cts = new CancellationTokenSource(RecommendationTimeout);
+            using var cts = new CancellationTokenSource(_readTimeout);
             using var response = await _httpClient.GetAsync(
                 $"/api/v1/recommendations/customers/{customerId:D}?limit={limit}",
                 cts.Token);

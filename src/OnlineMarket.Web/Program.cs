@@ -71,6 +71,8 @@ builder.Services.AddScoped<ICheckoutService, CheckoutService>();
 builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IAdminQueryService, AdminQueryService>();
 builder.Services.AddSingleton<IChatHistoryStore, InMemoryChatHistoryStore>();
+builder.Services.AddSingleton<IAiIntentRouter, AiIntentRouter>();
+builder.Services.AddScoped<IAiRecommendationOrchestrator, AiRecommendationOrchestrator>();
 builder.Services.AddScoped<IAiSupportService, AiSupportService>();
 builder.Services.AddScoped<IOutboxService, OutboxService>();
 builder.Services.AddScoped<IStockMutationService, SqlServerStockMutationService>();
@@ -89,9 +91,27 @@ builder.Services
         $"{RecommendationUiOptions.SectionName}:PersonalizedDisplayLimit must be between 1 and {RecommendationUiOptions.MaximumPersonalizedDisplayLimit}.")
     .ValidateOnStart();
 
-// Configure AI Assistant Options & API Client
-builder.Services.Configure<AiAssistantOptions>(builder.Configuration.GetSection(AiAssistantOptions.SectionName));
-var aiTimeoutSeconds = builder.Configuration.GetValue<int>("AiAssistant:TimeoutSeconds", 10);
+// Configure AI Assistant Options & API Client.
+// ApiKey is deliberately not required at startup: a blank credential only disables the
+// optional provider prose, it never hides the widget or blocks Recommendation.Api.
+builder.Services
+    .AddOptions<AiAssistantOptions>()
+    .Bind(builder.Configuration.GetSection(AiAssistantOptions.SectionName))
+    .Validate(
+        options => options.Validate().Count == 0,
+        $"Invalid '{AiAssistantOptions.SectionName}' configuration. " +
+        "TimeoutSeconds, Temperature, MaxMessageLength and RecommendationCount must be " +
+        "within their supported ranges, and an OpenAI provider requires an absolute " +
+        "HTTPS EndpointUrl together with a non-blank Model.")
+    .ValidateOnStart();
+
+var aiAssistantOptions = builder.Configuration
+    .GetSection(AiAssistantOptions.SectionName)
+    .Get<AiAssistantOptions>() ?? new AiAssistantOptions();
+var aiTimeoutSeconds = Math.Clamp(
+    aiAssistantOptions.TimeoutSeconds,
+    AiAssistantOptions.MinimumTimeoutSeconds,
+    AiAssistantOptions.MaximumTimeoutSeconds);
 builder.Services.AddHttpClient<IAiApiClient, ExternalAiApiClient>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(aiTimeoutSeconds);
@@ -99,10 +119,27 @@ builder.Services.AddHttpClient<IAiApiClient, ExternalAiApiClient>(client =>
 
 // Configure HTTP Clients for External Services with Short Timeouts
 var recommendationApiUrl = builder.Configuration["Services:RecommendationApi"] ?? "http://localhost:5008";
+
+// Shared, bounded read-timeout budget for Similar / Personalized / FrequentlyBoughtTogether.
+// A blank value keeps the class default (4s); this only needs to fail fast on nonsense input.
+builder.Services
+    .AddOptions<RecommendationApiClientOptions>()
+    .Bind(builder.Configuration.GetSection(RecommendationApiClientOptions.SectionName))
+    .Validate(
+        options => options.ReadTimeoutSeconds
+            is >= RecommendationApiClientOptions.MinimumReadTimeoutSeconds
+            and <= RecommendationApiClientOptions.MaximumReadTimeoutSeconds,
+        $"'{RecommendationApiClientOptions.SectionName}:ReadTimeoutSeconds' must be between " +
+        $"{RecommendationApiClientOptions.MinimumReadTimeoutSeconds} and " +
+        $"{RecommendationApiClientOptions.MaximumReadTimeoutSeconds}.")
+    .ValidateOnStart();
+
 builder.Services.AddHttpClient<IRecommendationClient, RecommendationApiClient>(client =>
 {
     client.BaseAddress = new Uri(recommendationApiUrl);
-    client.Timeout = TimeSpan.FromSeconds(5);
+    // Must stay above RecommendationApiClientOptions.MaximumReadTimeoutSeconds so the
+    // per-call read-timeout budget governs cutoff, not this outer client ceiling.
+    client.Timeout = TimeSpan.FromSeconds(RecommendationApiClientOptions.MaximumReadTimeoutSeconds + 1);
 })
     .RemoveAllLoggers()
     .AddHttpMessageHandler<RecommendationApiKeyHandler>();
@@ -146,6 +183,16 @@ builder.Services.AddHostedService<OutboxBackgroundWorker>();
 builder.Services.AddControllersWithViews();
 
 var app = builder.Build();
+
+// Safe startup diagnostics only. The API key and Authorization header are never logged.
+app.Logger.LogInformation(
+    "AI assistant configuration: Enabled={Enabled}, Provider={Provider}, Model={Model}, " +
+    "TimeoutSeconds={TimeoutSeconds}, ProviderCredentialConfigured={ProviderCredentialConfigured}.",
+    aiAssistantOptions.Enabled,
+    aiAssistantOptions.Provider,
+    aiAssistantOptions.Model,
+    aiTimeoutSeconds,
+    aiAssistantOptions.HasProviderCredential);
 
 if (importDemoExcelPath is not null)
 {

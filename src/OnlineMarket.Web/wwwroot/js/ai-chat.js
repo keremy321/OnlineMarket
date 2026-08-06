@@ -1,222 +1,359 @@
 /**
- * OnlineMarket AI Support Assistant JavaScript Module
+ * OnlineMarket AI Support Assistant.
+ *
+ * Talks only to OnlineMarket.Web. Product cards are rendered from the structured
+ * `products` array the server builds out of Recommendation.Api results; assistant text
+ * is always inserted as plain text so provider output can never become markup.
  */
-document.addEventListener('DOMContentLoaded', () => {
-    const launcherBtn = document.getElementById('aiWidgetLauncher');
-    const widgetBox = document.getElementById('aiWidgetBox');
-    const closeBtn = document.getElementById('aiWidgetClose');
-    const chatBody = document.getElementById('aiChatBody');
-    const inputField = document.getElementById('aiInputField');
-    const sendBtn = document.getElementById('aiSendBtn');
-    const badge = document.getElementById('aiLauncherBadge');
+(function () {
+    'use strict';
 
-    if (!launcherBtn || !widgetBox || !inputField || !sendBtn) {
-        return;
-    }
+    var PLACEHOLDER_IMAGE = 'https://placehold.co/200x200?text=Urun';
+    var DEFAULT_MAX_LENGTH = 500;
 
-    const maxChatHistoryMessages = 5;
-    let conversationId = null;
-    let isPending = false;
-    const chatHistory = [];
+    function init() {
+        var root = document.getElementById('aiWidgetRoot');
+        var launcherBtn = document.getElementById('aiWidgetLauncher');
+        var widgetBox = document.getElementById('aiWidgetBox');
+        var closeBtn = document.getElementById('aiWidgetClose');
+        var chatBody = document.getElementById('aiChatBody');
+        var inputField = document.getElementById('aiInputField');
+        var sendBtn = document.getElementById('aiSendBtn');
+        var badge = document.getElementById('aiLauncherBadge');
 
-    // A page load starts a new conversation. Remove IDs persisted by older versions.
-    try {
-        localStorage.removeItem('ai_chat_conv_id');
-    } catch {
-        // Storage can be unavailable in privacy-restricted browser contexts.
-    }
-
-    // Toggle Chat Window
-    launcherBtn.addEventListener('click', () => {
-        const isActive = widgetBox.classList.toggle('active');
-        if (isActive) {
-            if (badge) badge.style.display = 'none';
-            inputField.focus();
-            scrollToBottom();
+        // The widget is intentionally absent on pages that do not host it.
+        if (!root || !launcherBtn || !widgetBox || !chatBody || !inputField || !sendBtn) {
+            return;
         }
-    });
 
-    if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-            widgetBox.classList.remove('active');
-        });
-    }
-
-    // Handle Input keypress
-    inputField.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
+        var chatUrl = root.getAttribute('data-chat-url') || '/AiSupport/Chat';
+        var currentProductId = root.getAttribute('data-current-product-id') || null;
+        var pageType = root.getAttribute('data-page-type') || null;
+        var maxLength = parseInt(root.getAttribute('data-max-length'), 10);
+        if (!maxLength || maxLength < 1) {
+            maxLength = DEFAULT_MAX_LENGTH;
         }
-    });
 
-    sendBtn.addEventListener('click', () => {
-        sendMessage();
-    });
+        var maxChatHistoryMessages = 5;
+        var conversationId = null;
+        var isPending = false;
+        var chatHistory = [];
 
-    // Delegation for quick suggestion chips
-    chatBody.addEventListener('click', (e) => {
-        if (e.target && e.target.classList.contains('ai-chip')) {
-            const queryText = e.target.textContent;
-            if (queryText && !isPending) {
-                inputField.value = queryText;
-                sendMessage();
+        // A page load starts a new conversation. Remove ids persisted by older versions.
+        try {
+            localStorage.removeItem('ai_chat_conv_id');
+        } catch (storageError) {
+            // Storage can be unavailable in privacy-restricted browser contexts.
+        }
+
+        function setOpen(open) {
+            widgetBox.classList.toggle('active', open);
+            launcherBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
+            launcherBtn.setAttribute(
+                'aria-label',
+                open ? 'AI destek asistanını kapat' : 'AI destek asistanını aç');
+            if (open) {
+                if (badge) {
+                    badge.style.display = 'none';
+                }
+                inputField.focus();
+                scrollToBottom();
             }
         }
-    });
 
-    async function sendMessage() {
-        const messageText = inputField.value.trim();
-        if (!messageText || isPending) return;
+        launcherBtn.addEventListener('click', function () {
+            setOpen(!widgetBox.classList.contains('active'));
+        });
 
-        // Render User Message
-        appendUserMessage(messageText);
-        inputField.value = '';
-        setPending(true);
-
-        // Show typing indicator
-        const typingElem = showTypingIndicator();
-        scrollToBottom();
-
-        try {
-            const token = getAntiForgeryToken();
-            const response = await fetch('/AiSupport/Chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'RequestVerificationToken': token
-                },
-                body: JSON.stringify({
-                    message: messageText,
-                    conversationId: conversationId,
-                    currentUrl: window.location.href,
-                    history: chatHistory.slice(-maxChatHistoryMessages)
-                })
+        if (closeBtn) {
+            closeBtn.addEventListener('click', function () {
+                setOpen(false);
+                launcherBtn.focus();
             });
+        }
 
-            removeTypingIndicator(typingElem);
+        root.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && widgetBox.classList.contains('active')) {
+                setOpen(false);
+                launcherBtn.focus();
+            }
+        });
 
-            if (!response.ok) {
-                appendBotMessage('Üzgünüm, şu anda yanıt oluşturulamadı. Lütfen tekrar deneyin.', null);
+        inputField.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        sendBtn.addEventListener('click', function () {
+            sendMessage();
+        });
+
+        // Delegation for quick suggestion chips and product cards.
+        chatBody.addEventListener('click', function (e) {
+            var chip = e.target.closest ? e.target.closest('.ai-chip') : null;
+            if (chip && !isPending) {
+                inputField.value = chip.textContent || '';
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            var messageText = (inputField.value || '').trim();
+            if (!messageText || isPending) {
                 return;
             }
 
-            const data = await response.json();
-            if (data.conversationId) {
-                conversationId = data.conversationId;
+            if (messageText.length > maxLength) {
+                messageText = messageText.substring(0, maxLength);
             }
 
-            chatHistory.push({ sender: 'user', text: messageText, timestampUtc: new Date().toISOString() });
-            if (data.reply) {
-                chatHistory.push({ sender: 'assistant', text: data.reply, timestampUtc: new Date().toISOString() });
-            }
-            trimChatHistory();
+            appendUserMessage(messageText);
+            inputField.value = '';
+            setPending(true);
 
-            appendBotMessage(data.reply, data.suggestedActions);
-        } catch (err) {
-            console.error('AI Chat Error:', err);
-            removeTypingIndicator(typingElem);
-            appendBotMessage('Bağlantı hatası oluştu. Lütfen internet bağlantınızı kontrol edin ve tekrar deneyin.', null);
-        } finally {
-            setPending(false);
+            var typingElem = showTypingIndicator();
             scrollToBottom();
-        }
-    }
 
-    function appendUserMessage(text) {
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'ai-message user';
-        messageDiv.innerHTML = `
-            <div class="ai-message-bubble">${escapeHtml(text)}</div>
-            <div class="ai-message-time">${timeStr}</div>
-        `;
-        chatBody.appendChild(messageDiv);
-    }
+            var payload = {
+                message: messageText,
+                conversationId: conversationId,
+                currentUrl: window.location.pathname,
+                history: chatHistory.slice(-maxChatHistoryMessages),
+                currentProductId: currentProductId,
+                pageType: pageType
+            };
 
-    function appendBotMessage(text, suggestions) {
-        const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'ai-message bot';
+            fetch(chatUrl, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'RequestVerificationToken': getAntiForgeryToken()
+                },
+                body: JSON.stringify(payload)
+            }).then(function (response) {
+                removeTypingIndicator(typingElem);
+                if (!response.ok) {
+                    appendBotMessage(
+                        'Üzgünüm, şu anda yanıt oluşturulamadı. Lütfen tekrar deneyin.',
+                        null,
+                        null);
+                    return null;
+                }
+                return response.json();
+            }).then(function (data) {
+                if (!data) {
+                    return;
+                }
 
-        let formattedText = formatMarkdownText(text);
+                if (data.conversationId) {
+                    conversationId = data.conversationId;
+                }
 
-        let html = `<div class="ai-message-bubble">${formattedText}</div>`;
+                chatHistory.push({
+                    sender: 'user',
+                    text: messageText,
+                    timestampUtc: new Date().toISOString()
+                });
+                if (data.reply) {
+                    chatHistory.push({
+                        sender: 'assistant',
+                        text: data.reply,
+                        timestampUtc: new Date().toISOString()
+                    });
+                }
+                trimChatHistory();
 
-        if (suggestions && suggestions.length > 0) {
-            html += `<div class="ai-suggestions-wrapper">`;
-            suggestions.forEach(s => {
-                html += `<button type="button" class="ai-chip">${escapeHtml(s)}</button>`;
+                appendBotMessage(data.reply, data.suggestedActions, data.products);
+            }).catch(function () {
+                removeTypingIndicator(typingElem);
+                appendBotMessage(
+                    'Bağlantı hatası oluştu. Lütfen bağlantınızı kontrol edip tekrar deneyin.',
+                    null,
+                    null);
+            }).then(function () {
+                setPending(false);
+                scrollToBottom();
             });
-            html += `</div>`;
         }
 
-        html += `<div class="ai-message-time">${timeStr}</div>`;
-        messageDiv.innerHTML = html;
-        chatBody.appendChild(messageDiv);
-    }
+        function appendUserMessage(text) {
+            var messageDiv = document.createElement('div');
+            messageDiv.className = 'ai-message user';
+            messageDiv.appendChild(createBubble(text));
+            messageDiv.appendChild(createTimeStamp());
+            chatBody.appendChild(messageDiv);
+        }
 
-    function showTypingIndicator() {
-        const typingDiv = document.createElement('div');
-        typingDiv.className = 'ai-message bot typing';
-        typingDiv.innerHTML = `
-            <div class="ai-typing-indicator">
-                <div class="ai-typing-dot"></div>
-                <div class="ai-typing-dot"></div>
-                <div class="ai-typing-dot"></div>
-            </div>
-        `;
-        chatBody.appendChild(typingDiv);
-        return typingDiv;
-    }
+        function appendBotMessage(text, suggestions, products) {
+            var messageDiv = document.createElement('div');
+            messageDiv.className = 'ai-message bot';
+            messageDiv.appendChild(createBubble(text || ''));
 
-    function removeTypingIndicator(elem) {
-        if (elem && elem.parentNode) {
-            elem.parentNode.removeChild(elem);
+            if (products && products.length > 0) {
+                messageDiv.appendChild(createProductList(products));
+            }
+
+            if (suggestions && suggestions.length > 0) {
+                var wrapper = document.createElement('div');
+                wrapper.className = 'ai-suggestions-wrapper';
+                suggestions.forEach(function (suggestion) {
+                    var chip = document.createElement('button');
+                    chip.type = 'button';
+                    chip.className = 'ai-chip';
+                    chip.textContent = suggestion;
+                    wrapper.appendChild(chip);
+                });
+                messageDiv.appendChild(wrapper);
+            }
+
+            messageDiv.appendChild(createTimeStamp());
+            chatBody.appendChild(messageDiv);
+        }
+
+        /**
+         * Builds the recommendation cards. Every field comes from the server-built
+         * product list; nothing here is derived from provider text.
+         */
+        function createProductList(products) {
+            var list = document.createElement('div');
+            list.className = 'ai-product-list';
+
+            products.forEach(function (product) {
+                if (!product || !product.detailsUrl) {
+                    return;
+                }
+
+                var card = document.createElement('a');
+                card.className = 'ai-product-card';
+                card.href = product.detailsUrl;
+
+                var image = document.createElement('img');
+                image.className = 'ai-product-image';
+                image.src = product.imageUrl || PLACEHOLDER_IMAGE;
+                image.alt = product.name || '';
+                image.loading = 'lazy';
+                image.addEventListener('error', function () {
+                    if (image.src !== PLACEHOLDER_IMAGE) {
+                        image.src = PLACEHOLDER_IMAGE;
+                    }
+                });
+                card.appendChild(image);
+
+                var info = document.createElement('div');
+                info.className = 'ai-product-info';
+
+                var name = document.createElement('span');
+                name.className = 'ai-product-name';
+                name.textContent = product.name || '';
+                info.appendChild(name);
+
+                var price = document.createElement('span');
+                price.className = 'ai-product-price';
+                price.textContent = formatPrice(product.price);
+                info.appendChild(price);
+
+                if (product.reason) {
+                    var reason = document.createElement('span');
+                    reason.className = 'ai-product-reason';
+                    reason.textContent = product.reason;
+                    info.appendChild(reason);
+                }
+
+                card.appendChild(info);
+                list.appendChild(card);
+            });
+
+            return list;
+        }
+
+        function formatPrice(value) {
+            var amount = typeof value === 'number' ? value : parseFloat(value);
+            if (isNaN(amount)) {
+                return '';
+            }
+            try {
+                return amount.toLocaleString('tr-TR', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }) + ' ₺';
+            } catch (formatError) {
+                return amount.toFixed(2) + ' ₺';
+            }
+        }
+
+        function createBubble(text) {
+            var bubble = document.createElement('div');
+            bubble.className = 'ai-message-bubble';
+            // textContent, never innerHTML: provider output can never become markup.
+            bubble.textContent = text;
+            return bubble;
+        }
+
+        function createTimeStamp() {
+            var time = document.createElement('div');
+            time.className = 'ai-message-time';
+            time.textContent = new Date().toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            return time;
+        }
+
+        function showTypingIndicator() {
+            var typingDiv = document.createElement('div');
+            typingDiv.className = 'ai-message bot typing';
+
+            var indicator = document.createElement('div');
+            indicator.className = 'ai-typing-indicator';
+            for (var i = 0; i < 3; i++) {
+                var dot = document.createElement('div');
+                dot.className = 'ai-typing-dot';
+                indicator.appendChild(dot);
+            }
+
+            typingDiv.appendChild(indicator);
+            chatBody.appendChild(typingDiv);
+            return typingDiv;
+        }
+
+        function removeTypingIndicator(elem) {
+            if (elem && elem.parentNode) {
+                elem.parentNode.removeChild(elem);
+            }
+        }
+
+        function setPending(pending) {
+            isPending = pending;
+            sendBtn.disabled = pending;
+            inputField.disabled = pending;
+            root.classList.toggle('ai-widget-loading', pending);
+            if (!pending && widgetBox.classList.contains('active')) {
+                inputField.focus();
+            }
+        }
+
+        function scrollToBottom() {
+            chatBody.scrollTop = chatBody.scrollHeight;
+        }
+
+        function trimChatHistory() {
+            if (chatHistory.length > maxChatHistoryMessages) {
+                chatHistory.splice(0, chatHistory.length - maxChatHistoryMessages);
+            }
+        }
+
+        function getAntiForgeryToken() {
+            var tokenInput = root.querySelector('input[name="__RequestVerificationToken"]');
+            return tokenInput ? tokenInput.value : '';
         }
     }
 
-    function setPending(pending) {
-        isPending = pending;
-        sendBtn.disabled = pending;
-        inputField.disabled = pending;
-        if (!pending) inputField.focus();
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
     }
-
-    function scrollToBottom() {
-        chatBody.scrollTop = chatBody.scrollHeight;
-    }
-
-    function trimChatHistory() {
-        if (chatHistory.length > maxChatHistoryMessages) {
-            chatHistory.splice(0, chatHistory.length - maxChatHistoryMessages);
-        }
-    }
-
-    function getAntiForgeryToken() {
-        const tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
-        return tokenInput ? tokenInput.value : '';
-    }
-
-    function escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    function formatMarkdownText(text) {
-        if (!text) return '';
-        let escaped = escapeHtml(text);
-        
-        // Bold: **text**
-        escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-        // Inline code: `text`
-        escaped = escaped.replace(/`(.*?)`/g, '<code class="bg-light px-1 rounded text-primary">$1</code>');
-        // Bullet points: \n- or \n•
-        escaped = escaped.replace(/\n- /g, '<br/>• ');
-        escaped = escaped.replace(/\n• /g, '<br/>• ');
-        // Newlines
-        escaped = escaped.replace(/\n/g, '<br/>');
-        return escaped;
-    }
-});
+})();

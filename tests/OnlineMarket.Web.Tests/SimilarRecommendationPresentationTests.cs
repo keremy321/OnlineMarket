@@ -179,7 +179,8 @@ public sealed class SimilarRecommendationPresentationTests
 
         public Task<List<RecommendationItemDto>> GetFrequentlyBoughtTogetherAsync(
             Guid productId,
-            int count = 5) => Task.FromResult(new List<RecommendationItemDto>());
+            int count = 5,
+            CancellationToken cancellationToken = default) => Task.FromResult(new List<RecommendationItemDto>());
 
         public Task<List<RecommendationItemDto>> GetPopularRecommendationsAsync(
             int count = 5) => throw new NotSupportedException();
