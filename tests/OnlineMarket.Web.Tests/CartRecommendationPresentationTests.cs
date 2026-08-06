@@ -207,7 +207,8 @@ public sealed class CartRecommendationPresentationTests
         public Task<List<RecommendationItemDto>>
             GetFrequentlyBoughtTogetherAsync(
                 Guid productId,
-                int count = 5) => throw new NotSupportedException();
+                int count = 5,
+                CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
         public Task<List<RecommendationItemDto>> GetSimilarProductsAsync(
             Guid productId,

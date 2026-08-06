@@ -12,12 +12,17 @@
     --ai-shadow: 0 20px 40px rgba(0, 0, 0, 0.15), 0 0 20px rgba(99, 102, 241, 0.2);
 }
 
+/* The root wrapper is layout-neutral; the launcher and panel are viewport-fixed. */
+.ai-widget-root {
+    position: static;
+}
+
 /* Floating Launcher Button */
 .ai-widget-launcher {
     position: fixed;
     bottom: 24px;
     right: 24px;
-    z-index: 1050;
+    z-index: 1080;
     width: 60px;
     height: 60px;
     border-radius: 50%;
@@ -36,6 +41,14 @@
 .ai-widget-launcher:hover {
     transform: scale(1.1) rotate(5deg);
     box-shadow: 0 25px 45px rgba(79, 70, 229, 0.35);
+}
+
+/* Keyboard focus must stay visible even though the default outline is removed. */
+.ai-widget-launcher:focus-visible,
+.ai-send-btn:focus-visible,
+.ai-header-actions button:focus-visible {
+    outline: 3px solid #1d4ed8;
+    outline-offset: 3px;
 }
 
 .ai-widget-launcher i {
@@ -72,7 +85,7 @@
     position: fixed;
     bottom: 96px;
     right: 24px;
-    z-index: 1050;
+    z-index: 1080;
     width: 380px;
     max-width: calc(100vw - 32px);
     height: 540px;
@@ -276,6 +289,73 @@
     color: #ffffff;
     border-color: #4338ca;
     transform: translateY(-1px);
+}
+
+/* Recommendation Product Cards (built from Recommendation.Api results) */
+.ai-product-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+    width: 100%;
+}
+
+.ai-product-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.ai-product-card:hover,
+.ai-product-card:focus-visible {
+    border-color: var(--ai-primary);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.18);
+}
+
+.ai-product-image {
+    width: 48px;
+    height: 48px;
+    flex: 0 0 48px;
+    object-fit: contain;
+    border-radius: 10px;
+    background: #f9fafb;
+}
+
+.ai-product-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.ai-product-name {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #1f2937;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.ai-product-price {
+    font-size: 12.5px;
+    font-weight: 700;
+    color: #059669;
+}
+
+.ai-product-reason {
+    font-size: 11px;
+    color: #6b7280;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Typing Indicator */
