@@ -4,11 +4,11 @@
 }
 
 <!-- Hero Banner Section -->
-<section class="mb-5">
-    <div class="hero-card text-white p-4 p-md-5 position-relative">
+<section class="mb-4 mb-md-5">
+    <div class="hero-card text-white p-3 p-md-5 position-relative">
         <div class="row align-items-center">
             <div class="col-lg-7">
-                <div class="d-flex align-items-center gap-2 mb-3">
+                <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
                     <span class="badge bg-warning text-dark font-weight-bold px-3 py-2 rounded-pill">
                         <i class="bi bi-lightning-fill me-1"></i> 30 DAKİKADA EKSPRES TESLİMAT
                     </span>
@@ -16,8 +16,8 @@
                         <i class="bi bi-shield-check me-1"></i> %100 TAZE GARANTİSİ
                     </span>
                 </div>
-                <h1 class="display-4 fw-extrabold mb-3 text-white">Taptaze Market Ürünleri Kapınızda!</h1>
-                <p class="fs-5 opacity-90 mb-4 text-light">
+                <h1 class="display-5 display-md-4 fw-extrabold mb-3 text-white">Taptaze Market Ürünleri Kapınızda!</h1>
+                <p class="fs-6 fs-md-5 opacity-90 mb-4 text-light">
                     Yerli üreticilerden taze meyve ve sebzeler, süt ürünleri ve temel gıdalar V1 akıllı öneri algoritması desteğiyle tek tıkla kapınızda.
                 </p>
 
@@ -28,25 +28,25 @@
                             <i class="bi bi-search fs-5"></i>
                         </span>
                         <input type="text" name="searchQuery" class="form-control border-0 bg-transparent fs-6" placeholder="Meyve, süt, peynir, kahvaltılık ara..." />
-                        <button type="submit" class="btn btn-primary-custom rounded-pill px-4 font-weight-bold">
+                        <button type="submit" class="btn btn-primary-custom rounded-pill px-3 px-sm-4 font-weight-bold">
                             Ürün Ara
                         </button>
                     </div>
                 </form>
 
-                <div class="d-flex flex-wrap gap-3">
-                    <a asp-controller="Catalog" asp-action="Index" class="btn btn-light text-primary btn-lg px-4 py-3 font-weight-bold rounded-pill shadow-sm">
+                <div class="d-flex flex-column flex-sm-row gap-2 gap-sm-3">
+                    <a asp-controller="Catalog" asp-action="Index" class="btn btn-light text-primary btn-lg px-4 py-3 font-weight-bold rounded-pill shadow-sm text-center">
                         <i class="bi bi-bag-check-fill me-2 text-primary"></i>Alışverişe Başla
                     </a>
                     @if (Model.PersonalizedRecommendations.Any())
                     {
-                        <a href="#personalized-recommendations" class="btn btn-outline-light btn-lg px-4 py-3 font-weight-bold rounded-pill">
+                        <a href="#personalized-recommendations" class="btn btn-outline-light btn-lg px-4 py-3 font-weight-bold rounded-pill text-center">
                             <i class="bi bi-stars me-2"></i>Sana Özel Öneriler
                         </a>
                     }
                     else
                     {
-                        <a href="#recommendations" class="btn btn-outline-light btn-lg px-4 py-3 font-weight-bold rounded-pill">
+                        <a href="#recommendations" class="btn btn-outline-light btn-lg px-4 py-3 font-weight-bold rounded-pill text-center">
                             <i class="bi bi-stars me-2"></i>Akıllı Öneriler
                         </a>
                     }
@@ -381,41 +381,45 @@
 
 <!-- Features & Value Proposition -->
 <section class="mb-4">
-    <div class="row g-4">
-        <div class="col-md-3">
-            <div class="feature-card h-100 text-center">
-                <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-3 d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
-                    <i class="bi bi-lightning-charge-fill fs-3"></i>
+    <div class="row g-3 g-md-4">
+        <div class="col-6 col-md-3">
+            <div class="feature-card h-100 text-center p-3">
+                <div class="bg-primary bg-opacity-10 text-primary rounded-circle p-2 p-md-3 d-inline-flex align-items-center justify-content-center mb-2 mb-md-3" style="width: 50px; height: 50px;">
+                    <i class="bi bi-lightning-charge-fill fs-4"></i>
                 </div>
-                <h6 class="fw-bold mb-2">Ekspres Teslimat</h6>
-                <p class="text-secondary small mb-0">Siparişiniz 30 dakika içerisinde özel soğutmalı araçlarla kapınızda.</p>
+                <h6 class="fw-bold mb-1 fs-6">Ekspres Teslimat</h6>
+                <p class="text-secondary small mb-0 d-none d-sm-block">Siparişiniz 30 dakika içerisinde özel soğutmalı araçlarla kapınızda.</p>
+                <p class="text-secondary extra-small mb-0 d-sm-none">30 dk içinde kapınızda.</p>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="feature-card h-100 text-center">
-                <div class="bg-success bg-opacity-10 text-success rounded-circle p-3 d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
-                    <i class="bi bi-shield-check fs-3"></i>
+        <div class="col-6 col-md-3">
+            <div class="feature-card h-100 text-center p-3">
+                <div class="bg-success bg-opacity-10 text-success rounded-circle p-2 p-md-3 d-inline-flex align-items-center justify-content-center mb-2 mb-md-3" style="width: 50px; height: 50px;">
+                    <i class="bi bi-shield-check fs-4"></i>
                 </div>
-                <h6 class="fw-bold mb-2">%100 Taze Tazelik</h6>
-                <p class="text-secondary small mb-0">Yerli çiftçi ve üreticilerden günlük tedarik edilen taze ürünler.</p>
+                <h6 class="fw-bold mb-1 fs-6">%100 Taze</h6>
+                <p class="text-secondary small mb-0 d-none d-sm-block">Yerli çiftçi ve üreticilerden günlük tedarik edilen taze ürünler.</p>
+                <p class="text-secondary extra-small mb-0 d-sm-none">Günlük taze ürünler.</p>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="feature-card h-100 text-center">
-                <div class="bg-warning bg-opacity-10 text-warning rounded-circle p-3 d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
-                    <i class="bi bi-cpu-fill fs-3"></i>
+        <div class="col-6 col-md-3">
+            <div class="feature-card h-100 text-center p-3">
+                <div class="bg-warning bg-opacity-10 text-warning rounded-circle p-2 p-md-3 d-inline-flex align-items-center justify-content-center mb-2 mb-md-3" style="width: 50px; height: 50px;">
+                    <i class="bi bi-cpu-fill fs-4"></i>
                 </div>
-                <h6 class="fw-bold mb-2">V1 Akıllı Öneri Engine</h6>
-                <p class="text-secondary small mb-0">Alışkanlıklarınıza ve sepetlerinize özel kişiselleştirilmiş ürün tavsiyeleri.</p>
+                <h6 class="fw-bold mb-1 fs-6">V1 Akıllı Öneri</h6>
+                <p class="text-secondary small mb-0 d-none d-sm-block">Alışkanlıklarınıza ve sepetlerinize özel kişiselleştirilmiş ürün tavsiyeleri.</p>
+                <p class="text-secondary extra-small mb-0 d-sm-none">Kişisel tavsiyeler.</p>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="feature-card h-100 text-center">
-                <div class="bg-info bg-opacity-10 text-info rounded-circle p-3 d-inline-flex align-items-center justify-content-center mb-3" style="width: 60px; height: 60px;">
-                    <i class="bi bi-box-seam-fill fs-3"></i>
+        <div class="col-6 col-md-3">
+            <div class="feature-card h-100 text-center p-3">
+                <div class="bg-info bg-opacity-10 text-info rounded-circle p-2 p-md-3 d-inline-flex align-items-center justify-content-center mb-2 mb-md-3" style="width: 50px; height: 50px;">
+                    <i class="bi bi-box-seam-fill fs-4"></i>
                 </div>
-                <h6 class="fw-bold mb-2">ERP Entegrasyonu</h6>
-                <p class="text-secondary small mb-0">Siparişleriniz KDV detayları ve stok hareketleri ile anında ERP'ye aktarılır.</p>
+                <h6 class="fw-bold mb-1 fs-6">ERP Entegrasyonu</h6>
+                <p class="text-secondary small mb-0 d-none d-sm-block">Siparişleriniz KDV detayları ve stok hareketleri ile anında ERP'ye aktarılır.</p>
+                <p class="text-secondary extra-small mb-0 d-sm-none">Anında ERP aktarımı.</p>
             </div>
         </div>
     </div>

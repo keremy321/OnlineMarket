@@ -54,24 +54,34 @@
     <!-- Main Navigation Header -->
     <header class="navbar-custom">
         <div class="container d-flex align-items-center justify-content-between">
-            <a class="navbar-brand d-flex align-items-center gap-2" asp-controller="Home" asp-action="Index">
-                <div class="brand-icon-wrapper">
-                    <i class="bi bi-bag-heart-fill"></i>
-                </div>
-                <span>OnlineMarket</span>
-            </a>
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-light rounded-circle p-2 d-md-none border shadow-xs" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileNavDrawer" aria-controls="mobileNavDrawer" aria-label="Menüyü Aç">
+                    <i class="bi bi-list fs-4 text-dark"></i>
+                </button>
+                <a class="navbar-brand d-flex align-items-center gap-2" asp-controller="Home" asp-action="Index">
+                    <div class="brand-icon-wrapper">
+                        <i class="bi bi-bag-heart-fill"></i>
+                    </div>
+                    <span>OnlineMarket</span>
+                </a>
+            </div>
 
-            <!-- Search Form -->
+            <!-- Desktop Search Form -->
             <form class="d-none d-md-flex align-items-center me-3" style="max-width: 480px; flex: 1;" asp-controller="Catalog" asp-action="Index" method="get">
                 <div class="input-group shadow-sm rounded-pill overflow-hidden border">
                     <input type="text" name="searchQuery" class="form-control border-0 ps-4 py-2" placeholder="Taze meyve, süt, organik ürün ara..." value="@Context.Request.Query["searchQuery"]" />
-                    <button class="btn btn-primary-custom px-4 border-0" type="submit">
+                    <button class="btn btn-primary-custom px-4 border-0" type="submit" aria-label="Ara">
                         <i class="bi bi-search"></i>
                     </button>
                 </div>
             </form>
 
-            <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center gap-2 gap-sm-3">
+                <!-- Mobile Search Toggle Button -->
+                <button class="btn btn-outline-secondary rounded-circle p-2 d-md-none shadow-xs" type="button" data-bs-toggle="collapse" data-bs-target="#mobileSearchCollapse" aria-expanded="false" aria-controls="mobileSearchCollapse" aria-label="Arama Yap">
+                    <i class="bi bi-search fs-5"></i>
+                </button>
+
                 <a class="btn btn-outline-dark rounded-pill px-3 py-2 position-relative font-weight-bold d-flex align-items-center gap-2 shadow-xs" asp-controller="Cart" asp-action="Index">
                     <i class="bi bi-cart3 fs-5 text-primary"></i>
                     <span class="d-none d-sm-inline">Sepetim</span>
@@ -83,10 +93,10 @@
 
                 @if (User.Identity?.IsAuthenticated == true)
                 {
-                    <div class="dropdown">
+                    <div class="dropdown d-none d-sm-block">
                         <button class="btn btn-primary-custom rounded-pill dropdown-toggle px-3 py-2 d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown" aria-expanded="false">
                             <i class="bi bi-person-circle fs-5"></i>
-                            <span class="d-none d-sm-inline">Hesabım</span>
+                            <span>Hesabım</span>
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end shadow-lg border-0 rounded-4 mt-2 p-2">
                             <li><a class="dropdown-item rounded-3 py-2" asp-controller="Address" asp-action="Index"><i class="bi bi-geo-alt me-2 text-primary"></i>Adreslerim</a></li>
@@ -108,25 +118,50 @@
                 }
                 else
                 {
-                    <a class="btn btn-outline-primary rounded-pill px-3 py-2 font-weight-bold" asp-controller="Account" asp-action="Login">Giriş Yap</a>
-                    <a class="btn btn-primary-custom rounded-pill px-3 py-2 font-weight-bold" asp-controller="Account" asp-action="Register">Kayıt Ol</a>
+                    <div class="d-none d-sm-flex align-items-center gap-2">
+                        <a class="btn btn-outline-primary rounded-pill px-3 py-2 font-weight-bold" asp-controller="Account" asp-action="Login">Giriş Yap</a>
+                        <a class="btn btn-primary-custom rounded-pill px-3 py-2 font-weight-bold" asp-controller="Account" asp-action="Register">Kayıt Ol</a>
+                    </div>
                 }
             </div>
         </div>
 
+        <!-- Mobile Expandable Search Bar -->
+        <div class="collapse d-md-none border-top bg-white p-3 shadow-sm" id="mobileSearchCollapse">
+            <form asp-controller="Catalog" asp-action="Index" method="get" class="d-flex align-items-center">
+                <div class="input-group rounded-pill overflow-hidden border w-100">
+                    <input type="text" name="searchQuery" class="form-control border-0 ps-3 py-2" placeholder="Ürün, marka, gıda ara..." value="@Context.Request.Query["searchQuery"]" />
+                    <button class="btn btn-primary-custom px-4 border-0" type="submit">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+
         <!-- Secondary Categories Sub-Navbar -->
+        @{
+            var activeController = ViewContext.RouteData.Values["controller"]?.ToString();
+            var activeAction = ViewContext.RouteData.Values["action"]?.ToString();
+            var activeCategoryIdStr = Context.Request.Query["categoryId"].ToString();
+            Guid.TryParse(activeCategoryIdStr, out var activeCategoryId);
+
+            bool isHomeActive = activeController == "Home" && activeAction == "Index" && string.IsNullOrEmpty(activeCategoryIdStr);
+            bool isAllProductsActive = activeController == "Catalog" && activeAction == "Index" && string.IsNullOrEmpty(activeCategoryIdStr);
+        }
         <nav class="category-subnav mt-2 pt-2 border-top position-relative">
             <div class="container d-flex align-items-center position-relative">
                 <button type="button" class="subnav-scroll-btn left d-none d-md-flex" onclick="scrollCategorySubnav(-220)" aria-label="Sola Kaydır">
                     <i class="bi bi-chevron-left"></i>
                 </button>
-                <div id="categorySubnavContainer" class="d-flex align-items-center gap-3 overflow-x-auto py-1 scrollbar-hidden category-subnav-container w-100 px-md-4">
-                    <a asp-controller="Home" asp-action="Index" class="nav-sublink active"><i class="bi bi-house-door-fill me-1"></i> Ana Sayfa</a>
-                    <a asp-controller="Catalog" asp-action="Index" class="nav-sublink"><i class="bi bi-grid-fill me-1"></i> Tüm Ürünler</a>
+                <div id="categorySubnavContainer" class="d-flex align-items-center gap-2 gap-md-3 overflow-x-auto py-1 scrollbar-hidden category-subnav-container w-100 px-md-4">
+                    <a asp-controller="Home" asp-action="Index" class="nav-sublink @(isHomeActive ? "active" : "")"><i class="bi bi-house-door-fill me-1"></i> Ana Sayfa</a>
+                    <a asp-controller="Catalog" asp-action="Index" class="nav-sublink @(isAllProductsActive ? "active" : "")"><i class="bi bi-grid-fill me-1"></i> Tüm Ürünler</a>
 
                     @foreach (var pCat in navParentCategories)
                     {
-                        <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@pCat.Id" class="nav-sublink">
+                        bool isCatActive = activeController == "Catalog" && 
+                            (pCat.Id == activeCategoryId || (pCat.SubCategories != null && pCat.SubCategories.Any(s => s.Id == activeCategoryId)));
+                        <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@pCat.Id" class="nav-sublink @(isCatActive ? "active" : "")">
                             @if (pCat.Name.Contains("Gıda"))
                             {
                                 <i class="bi bi-basket2-fill me-1 text-success"></i>
@@ -163,7 +198,7 @@
                         </a>
                     }
 
-                    <a asp-controller="Home" asp-action="Index" asp-fragment="recommendations" class="nav-sublink text-primary font-weight-bold ms-auto"><i class="bi bi-stars me-1"></i> Sana Özel Öneriler</a>
+                    <a asp-controller="Home" asp-action="Index" asp-fragment="recommendations" class="nav-sublink text-primary font-weight-bold ms-auto"><i class="bi bi-stars me-1"></i> Öneriler</a>
                 </div>
                 <button type="button" class="subnav-scroll-btn right d-none d-md-flex" onclick="scrollCategorySubnav(220)" aria-label="Sağa Kaydır">
                     <i class="bi bi-chevron-right"></i>
@@ -180,7 +215,118 @@
         </script>
     </header>
 
-    <main class="container animate-fade-in py-4">
+    <!-- Offcanvas Mobile Drawer Navigation -->
+    <div class="offcanvas offcanvas-start offcanvas-custom" tabindex="-1" id="mobileNavDrawer" aria-labelledby="mobileNavDrawerLabel">
+        <div class="offcanvas-header offcanvas-header-custom p-3">
+            <div class="d-flex align-items-center gap-2">
+                <div class="brand-icon-wrapper bg-white text-primary">
+                    <i class="bi bi-bag-heart-fill"></i>
+                </div>
+                <h5 class="offcanvas-title text-white fw-bold" id="mobileNavDrawerLabel">OnlineMarket</h5>
+            </div>
+            <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Kapat"></button>
+        </div>
+        <div class="offcanvas-body p-3">
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                <div class="p-3 bg-light rounded-4 mb-4 border d-flex align-items-center gap-3">
+                    <i class="bi bi-person-circle fs-2 text-primary"></i>
+                    <div>
+                        <strong class="d-block text-dark">Hoş Geldiniz</strong>
+                        <span class="text-secondary small">@User.Identity.Name</span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="p-3 bg-light rounded-4 mb-4 border text-center">
+                    <p class="small text-secondary mb-3">Taze market alışverişi için hemen giriş yapın.</p>
+                    <div class="d-grid gap-2">
+                        <a asp-controller="Account" asp-action="Login" class="btn btn-primary-custom rounded-pill fw-bold">Giriş Yap</a>
+                        <a asp-controller="Account" asp-action="Register" class="btn btn-outline-primary rounded-pill fw-bold">Kayıt Ol</a>
+                    </div>
+                </div>
+            }
+
+            <h6 class="text-uppercase text-secondary small fw-extrabold mb-3">Kategoriler</h6>
+            <div class="d-flex flex-column gap-1 mb-4">
+                <a asp-controller="Catalog" asp-action="Index" class="drawer-category-item @(isAllProductsActive ? "active" : "")">
+                    <span><i class="bi bi-grid-fill me-2 text-primary"></i> Tüm Kataloğu Gör</span>
+                    <i class="bi bi-chevron-right small text-muted"></i>
+                </a>
+                @foreach (var pCat in navParentCategories)
+                {
+                    <a asp-controller="Catalog" asp-action="Index" asp-route-categoryId="@pCat.Id" class="drawer-category-item">
+                        <span><i class="bi bi-folder-fill me-2 text-secondary"></i> @pCat.Name</span>
+                        <i class="bi bi-chevron-right small text-muted"></i>
+                    </a>
+                }
+            </div>
+
+            @if (User.Identity?.IsAuthenticated == true)
+            {
+                <h6 class="text-uppercase text-secondary small fw-extrabold mb-3">Hesap İle İlgili</h6>
+                <div class="d-flex flex-column gap-1 mb-4">
+                    <a asp-controller="Address" asp-action="Index" class="drawer-category-item">
+                        <span><i class="bi bi-geo-alt me-2 text-primary"></i> Adreslerim</span>
+                    </a>
+                    <a asp-controller="Orders" asp-action="Index" class="drawer-category-item">
+                        <span><i class="bi bi-box-seam me-2 text-success"></i> Siparişlerim</span>
+                    </a>
+                    @if (User.IsInRole("Admin"))
+                    {
+                        <a asp-controller="Admin" asp-action="Index" class="drawer-category-item text-primary fw-bold">
+                            <span><i class="bi bi-speedometer2 me-2"></i> Admin Paneli</span>
+                        </a>
+                    }
+                    <form asp-controller="Account" asp-action="Logout" method="post" class="mt-2">
+                        @Html.AntiForgeryToken()
+                        <button type="submit" class="btn btn-outline-danger w-100 rounded-pill"><i class="bi bi-box-arrow-right me-2"></i>Çıkış Yap</button>
+                    </form>
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation Bar -->
+    <nav class="mobile-bottom-nav d-md-none" aria-label="Mobil alt navigasyon">
+        <a asp-controller="Home" asp-action="Index" class="mobile-nav-item @(activeController == "Home" && activeAction == "Index" ? "active" : "")">
+            <i class="bi bi-house-door-fill"></i>
+            <span>Ana Sayfa</span>
+        </a>
+        <a asp-controller="Catalog" asp-action="Index" class="mobile-nav-item @(activeController == "Catalog" ? "active" : "")">
+            <i class="bi bi-grid"></i>
+            <span>Katalog</span>
+        </a>
+        <a asp-controller="Cart" asp-action="Index" class="mobile-nav-item @(activeController == "Cart" ? "active" : "")">
+            <i class="bi bi-cart3"></i>
+            <span>Sepetim</span>
+            @if (cartCount > 0)
+            {
+                <span class="mobile-nav-badge">@cartCount</span>
+            }
+        </a>
+        <a asp-controller="Orders" asp-action="Index" class="mobile-nav-item @(activeController == "Orders" ? "active" : "")">
+            <i class="bi bi-box-seam"></i>
+            <span>Siparişler</span>
+        </a>
+        @if (User.Identity?.IsAuthenticated == true)
+        {
+            <button type="button" class="mobile-nav-item border-0 bg-transparent" data-bs-toggle="offcanvas" data-bs-target="#mobileNavDrawer">
+                <i class="bi bi-person-circle"></i>
+                <span>Hesabım</span>
+            </button>
+        }
+        else
+        {
+            <a asp-controller="Account" asp-action="Login" class="mobile-nav-item @(activeController == "Account" ? "active" : "")">
+                <i class="bi bi-person"></i>
+                <span>Giriş Yap</span>
+            </a>
+        }
+    </nav>
+
+    <main class="container animate-fade-in py-3 py-md-4">
         @if (TempData["SuccessMessage"] != null)
         {
             <div class="alert alert-success alert-dismissible fade show rounded-4 shadow-sm mb-4 border-0 border-start border-success border-4" role="alert">
@@ -213,7 +359,7 @@
                     <p class="text-secondary small">
                         Uyumsoft ekosistemiyle tam entegre, yapay zeka destekli V1 akıllı öneri motoru ve anlık stok yönetimine sahip nesil market platformu.
                     </p>
-                    <div class="d-flex gap-2">
+                    <div class="d-flex gap-2 flex-wrap">
                         <span class="badge bg-light text-dark border"><i class="bi bi-shield-check text-success me-1"></i> OWASP Güvenli</span>
                         <span class="badge bg-light text-dark border"><i class="bi bi-cpu-fill text-primary me-1"></i> .NET 10 & EF Core</span>
                     </div>
@@ -271,3 +417,4 @@
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>
+

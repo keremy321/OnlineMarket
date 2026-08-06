@@ -51,7 +51,8 @@ public class CatalogController : Controller
         decimal? minPrice,
         decimal? maxPrice,
         bool inStockOnly = false,
-        string sortBy = "newest")
+        string sortBy = "newest",
+        int page = 1)
     {
         try
         {
@@ -77,9 +78,14 @@ public class CatalogController : Controller
             var popularRecs = await EnrichAndValidateRecommendationsAsync(rawPopular);
             var personalizedRecs = await EnrichAndValidateRecommendationsAsync(rawPersonalized);
 
+            int pageSize = 18;
+            int totalItems = products.Count;
+            int currentPage = Math.Max(1, page);
+            var pagedProducts = products.Skip((currentPage - 1) * pageSize).Take(pageSize).ToList();
+
             var viewModel = new CatalogIndexViewModel
             {
-                Products = products,
+                Products = pagedProducts,
                 Categories = categories,
                 Brands = brands,
                 PopularRecommendations = popularRecs,
@@ -90,7 +96,10 @@ public class CatalogController : Controller
                 MinPrice = minPrice,
                 MaxPrice = maxPrice,
                 InStockOnly = inStockOnly,
-                SortBy = sortBy
+                SortBy = sortBy,
+                CurrentPage = currentPage,
+                PageSize = pageSize,
+                TotalItems = totalItems
             };
 
             return View(viewModel);

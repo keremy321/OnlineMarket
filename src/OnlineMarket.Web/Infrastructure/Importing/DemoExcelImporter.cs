@@ -51,86 +51,90 @@ public sealed class DemoExcelImporter
                 "The demo Excel importer requires the SQL Server provider.");
         }
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(
-            IsolationLevel.Serializable,
-            cancellationToken);
-
-        try
+        var strategy = dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            await ValidateUniqueDatabaseKeysAsync(document, cancellationToken);
-            var importedOrderIds = document.Orders.Select(order => order.Id).ToArray();
-            var existingImportedOrderCount = await dbContext.Orders
-                .CountAsync(order => importedOrderIds.Contains(order.Id), cancellationToken);
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(
+                IsolationLevel.Serializable,
+                cancellationToken);
 
-            if (existingImportedOrderCount != 0
-                && existingImportedOrderCount != document.Orders.Count)
+            try
             {
-                throw Conflict(
-                    "Only part of the workbook order set already exists. Partial historical imports are not resumed.");
-            }
+                await ValidateUniqueDatabaseKeysAsync(document, cancellationToken);
+                var importedOrderIds = document.Orders.Select(order => order.Id).ToArray();
+                var existingImportedOrderCount = await dbContext.Orders
+                    .CountAsync(order => importedOrderIds.Contains(order.Id), cancellationToken);
 
-            if (existingImportedOrderCount == document.Orders.Count)
-            {
-                await ValidateCompleteExistingImportAsync(
-                    document,
-                    emitHistoricalErpEvents,
-                    cancellationToken);
+                if (existingImportedOrderCount != 0
+                    && existingImportedOrderCount != document.Orders.Count)
+                {
+                    throw Conflict(
+                        "Only part of the workbook order set already exists. Partial historical imports are not resumed.");
+                }
+
+                if (existingImportedOrderCount == document.Orders.Count)
+                {
+                    await ValidateCompleteExistingImportAsync(
+                        document,
+                        emitHistoricalErpEvents,
+                        cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+
+                    var existingResult = CreateResult(document, emitHistoricalErpEvents, true);
+                    logger.LogInformation(
+                        "Demo Excel import is already complete: {Products} products, {Customers} customers, {Orders} orders, {OutboxMessages} expected Outbox messages.",
+                        existingResult.Products,
+                        existingResult.Customers,
+                        existingResult.Orders,
+                        existingResult.ProductOutboxMessages
+                        + existingResult.RecommendationOutboxMessages
+                        + existingResult.ErpOutboxMessages);
+                    return existingResult;
+                }
+
+                await RefusePartialImportArtifactsAsync(document, cancellationToken);
+                await EnsureCustomerRoleAsync();
+                await EnsureIdentityUsersAsync(document, customerPassword, cancellationToken);
+                await AddOrValidateCatalogueAsync(document, cancellationToken);
+                await AddOrValidateCustomersAsync(document, cancellationToken);
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                AddHistoricalOrdersAndStock(document);
+                AddProductOutboxMessages(document);
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                AddRecommendationOutboxMessages(document);
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                if (emitHistoricalErpEvents)
+                {
+                    AddErpOutboxMessages(document);
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+
                 await transaction.CommitAsync(cancellationToken);
 
-                var existingResult = CreateResult(document, emitHistoricalErpEvents, true);
+                var result = CreateResult(document, emitHistoricalErpEvents, false);
                 logger.LogInformation(
-                    "Demo Excel import is already complete: {Products} products, {Customers} customers, {Orders} orders, {OutboxMessages} expected Outbox messages.",
-                    existingResult.Products,
-                    existingResult.Customers,
-                    existingResult.Orders,
-                    existingResult.ProductOutboxMessages
-                    + existingResult.RecommendationOutboxMessages
-                    + existingResult.ErpOutboxMessages);
-                return existingResult;
+                    "Demo Excel import completed: {Categories} categories, {Brands} brands, {Products} products, {Customers} customers, {Orders} orders, {OrderItems} order items, {OutboxMessages} Outbox messages.",
+                    result.Categories,
+                    result.Brands,
+                    result.Products,
+                    result.Customers,
+                    result.Orders,
+                    result.OrderItems,
+                    result.ProductOutboxMessages
+                    + result.RecommendationOutboxMessages
+                    + result.ErpOutboxMessages);
+                return result;
             }
-
-            await RefusePartialImportArtifactsAsync(document, cancellationToken);
-            await EnsureCustomerRoleAsync();
-            await EnsureIdentityUsersAsync(document, customerPassword, cancellationToken);
-            await AddOrValidateCatalogueAsync(document, cancellationToken);
-            await AddOrValidateCustomersAsync(document, cancellationToken);
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            AddHistoricalOrdersAndStock(document);
-            AddProductOutboxMessages(document);
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            AddRecommendationOutboxMessages(document);
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            if (emitHistoricalErpEvents)
+            catch
             {
-                AddErpOutboxMessages(document);
-                await dbContext.SaveChangesAsync(cancellationToken);
+                await transaction.RollbackAsync(CancellationToken.None);
+                dbContext.ChangeTracker.Clear();
+                throw;
             }
-
-            await transaction.CommitAsync(cancellationToken);
-
-            var result = CreateResult(document, emitHistoricalErpEvents, false);
-            logger.LogInformation(
-                "Demo Excel import completed: {Categories} categories, {Brands} brands, {Products} products, {Customers} customers, {Orders} orders, {OrderItems} order items, {OutboxMessages} Outbox messages.",
-                result.Categories,
-                result.Brands,
-                result.Products,
-                result.Customers,
-                result.Orders,
-                result.OrderItems,
-                result.ProductOutboxMessages
-                + result.RecommendationOutboxMessages
-                + result.ErpOutboxMessages);
-            return result;
-        }
-        catch
-        {
-            await transaction.RollbackAsync(CancellationToken.None);
-            dbContext.ChangeTracker.Clear();
-            throw;
-        }
+        });
     }
 
     private async Task ValidateUniqueDatabaseKeysAsync(

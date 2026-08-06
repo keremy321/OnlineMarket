@@ -1,30 +1,31 @@
 @model OnlineMarket.Web.Application.Models.ProductDto
 
-<div class="product-card-modern h-100 d-flex flex-column p-3">
-    <div class="product-img-wrapper mb-3">
-        <span class="position-absolute top-0 start-0 m-2 badge bg-success-subtle text-success border border-success-subtle rounded-pill font-weight-bold">
+<div class="product-card-modern h-100 d-flex flex-column p-2 p-sm-3">
+    <div class="product-img-wrapper mb-2 mb-sm-3">
+        <span class="position-absolute top-0 start-0 m-1 m-sm-2 badge bg-success-subtle text-success border border-success-subtle rounded-pill font-weight-bold extra-small">
             <i class="bi bi-check2 me-1"></i> Stokta
         </span>
-        <img src="@(string.IsNullOrEmpty(Model.ImageUrl) ? "https://placehold.co/200x200?text=Urun" : Model.ImageUrl)" class="img-fluid rounded" style="max-height: 140px; object-fit: contain;" alt="@Model.Name" />
+        <img src="@(string.IsNullOrEmpty(Model.ImageUrl) ? "https://placehold.co/200x200?text=Urun" : Model.ImageUrl)" class="img-fluid rounded" style="max-height: 130px; object-fit: contain;" alt="@Model.Name" />
     </div>
 
-    <span class="text-secondary extra-small text-uppercase font-weight-bold">@Model.CategoryName • @Model.BrandName</span>
-    <h6 class="fw-bold text-dark mt-1 mb-2 text-truncate" title="@Model.Name">
+    <span class="text-secondary extra-small text-uppercase font-weight-bold text-truncate">@Model.CategoryName • @Model.BrandName</span>
+    <h6 class="fw-bold text-dark mt-1 mb-2 text-truncate small fs-sm-6" title="@Model.Name">
         <a asp-controller="Catalog" asp-action="Details" asp-route-id="@Model.Id" class="text-dark text-decoration-none">@Model.Name</a>
     </h6>
 
-    <div class="mt-auto pt-3 border-top d-flex align-items-center justify-content-between">
+    <div class="mt-auto pt-2 pt-sm-3 border-top d-flex align-items-center justify-content-between">
         <div>
-            <div class="fw-extrabold text-success fs-5">@Model.Price.ToString("N2") ₺</div>
+            <div class="fw-extrabold text-success price-tag">@Model.Price.ToString("N2") ₺</div>
             <div class="vat-info">+%@Model.VatRate KDV</div>
         </div>
 
         <form asp-controller="Cart" asp-action="AddToCart" method="post">
             @Html.AntiForgeryToken()
             <input type="hidden" name="productId" value="@Model.Id" />
-            <button type="submit" class="btn btn-primary-custom rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;" title="Sepete Ekle">
+            <button type="submit" class="btn btn-primary-custom rounded-circle p-2 d-flex align-items-center justify-content-center shadow-xs" style="width: 40px; height: 40px;" title="Sepete Ekle" aria-label="Sepete Ekle">
                 <i class="bi bi-cart-plus fs-5"></i>
             </button>
         </form>
     </div>
 </div>
+

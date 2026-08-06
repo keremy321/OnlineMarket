@@ -437,19 +437,25 @@
 }
 
 /* Mobile Responsiveness */
-@media (max-width: 480px) {
+@media (max-width: 767.98px) {
     .ai-widget-box {
-        bottom: 80px;
-        right: 16px;
-        left: 16px;
+        bottom: 135px;
+        right: 12px;
+        left: 12px;
         width: auto;
-        height: 480px;
+        height: min(500px, calc(100vh - 150px));
+        border-radius: 20px;
     }
     
     .ai-widget-launcher {
-        bottom: 16px;
+        bottom: 76px;
         right: 16px;
         width: 52px;
         height: 52px;
     }
+    
+    .ai-widget-launcher i {
+        font-size: 22px;
+    }
 }
+

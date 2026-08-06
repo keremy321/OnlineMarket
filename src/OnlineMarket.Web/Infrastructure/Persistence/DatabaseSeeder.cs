@@ -145,173 +145,176 @@ public sealed class DatabaseSeeder
         Guid? adminUserId,
         CancellationToken cancellationToken)
     {
-        var now = DateTime.UtcNow;
-        var isRelational = _dbContext.Database.IsRelational();
-        var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
-
-        var existingCategories = await _dbContext.Categories
-            .ToDictionaryAsync(category => category.Id, cancellationToken);
-        var categorySlugs = existingCategories.Values
-            .ToDictionary(category => category.Slug, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var seed in catalog.Categories)
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async () =>
         {
-            if (existingCategories.ContainsKey(seed.Id))
+            var now = DateTime.UtcNow;
+            var isRelational = _dbContext.Database.IsRelational();
+            await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync(cancellationToken) : null;
+
+            var existingCategories = await _dbContext.Categories
+                .ToDictionaryAsync(category => category.Id, cancellationToken);
+            var categorySlugs = existingCategories.Values
+                .ToDictionary(category => category.Slug, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var seed in catalog.Categories)
             {
-                continue;
-            }
-
-            var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
-
-            if (categorySlugs.TryGetValue(effectiveSlug, out var conflictingCategory) && conflictingCategory.Id != seed.Id)
-            {
-                effectiveSlug = $"{effectiveSlug}-{seed.Id.ToString("N")[..6]}";
-            }
-
-            var category = new Category
-            {
-                Id = seed.Id,
-                ParentCategoryId = seed.ParentCategoryId,
-                Name = seed.Name,
-                Slug = effectiveSlug,
-                DisplayOrder = seed.DisplayOrder,
-                IsActive = true,
-                CreatedAtUtc = now,
-                UpdatedAtUtc = now
-            };
-            _dbContext.Categories.Add(category);
-            existingCategories.Add(category.Id, category);
-            categorySlugs[category.Slug] = category;
-        }
-
-        var existingBrands = await _dbContext.Brands
-            .ToDictionaryAsync(brand => brand.Id, cancellationToken);
-        var brandSlugs = existingBrands.Values
-            .ToDictionary(brand => brand.Slug, StringComparer.OrdinalIgnoreCase);
-
-        foreach (var seed in catalog.Brands)
-        {
-            if (existingBrands.ContainsKey(seed.Id))
-            {
-                continue;
-            }
-
-            var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
-
-            if (brandSlugs.TryGetValue(effectiveSlug, out var conflictingBrand) && conflictingBrand.Id != seed.Id)
-            {
-                effectiveSlug = $"{effectiveSlug}-{seed.Id.ToString("N")[..6]}";
-            }
-
-            var brand = new Brand
-            {
-                Id = seed.Id,
-                Name = seed.Name,
-                Slug = effectiveSlug,
-                IsActive = true,
-                CreatedAtUtc = now,
-                UpdatedAtUtc = now
-            };
-            _dbContext.Brands.Add(brand);
-            existingBrands.Add(brand.Id, brand);
-            brandSlugs[brand.Slug] = brand;
-        }
-
-        var existingProducts = await _dbContext.Products
-            .ToDictionaryAsync(product => product.Id, cancellationToken);
-        var productsBySku = existingProducts.Values
-            .ToDictionary(product => product.Sku, StringComparer.OrdinalIgnoreCase);
-        var productsBySlug = existingProducts.Values
-            .ToDictionary(product => product.Slug, StringComparer.OrdinalIgnoreCase);
-        var existingStockProductIds = await _dbContext.Stocks
-            .Select(stock => stock.ProductId)
-            .ToHashSetAsync(cancellationToken);
-
-        foreach (var seed in catalog.Products)
-        {
-            if (!existingCategories.ContainsKey(seed.CategoryId)
-                || !existingBrands.ContainsKey(seed.BrandId))
-            {
-                throw new InvalidDataException(
-                    $"Canonical product '{seed.Sku}' references an unknown category or brand.");
-            }
-
-            var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
-
-            if (!existingProducts.TryGetValue(seed.Id, out var product))
-            {
-                if (productsBySku.TryGetValue(seed.Sku, out var skuConflict) && skuConflict.Id != seed.Id)
+                if (existingCategories.ContainsKey(seed.Id))
                 {
-                    throw new InvalidOperationException(
-                        $"Canonical SKU '{seed.Sku}' conflicts with product {skuConflict.Id}.");
+                    continue;
                 }
 
-                if (productsBySlug.TryGetValue(effectiveSlug, out var slugConflict) && slugConflict.Id != seed.Id)
+                var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
+
+                if (categorySlugs.TryGetValue(effectiveSlug, out var conflictingCategory) && conflictingCategory.Id != seed.Id)
                 {
                     effectiveSlug = $"{effectiveSlug}-{seed.Id.ToString("N")[..6]}";
                 }
 
-                product = new Product
+                var category = new Category
                 {
                     Id = seed.Id,
-                    Sku = seed.Sku,
+                    ParentCategoryId = seed.ParentCategoryId,
                     Name = seed.Name,
                     Slug = effectiveSlug,
-                    Description = seed.Description,
-                    CategoryId = seed.CategoryId,
-                    BrandId = seed.BrandId,
-                    Price = seed.Price,
-                    VatRate = seed.VatRate,
-                    NetContent = seed.NetContent,
-                    UnitType = seed.UnitType,
-                    ImageUrl = seed.ImageUrl,
+                    DisplayOrder = seed.DisplayOrder,
                     IsActive = true,
                     CreatedAtUtc = now,
                     UpdatedAtUtc = now
                 };
-                _dbContext.Products.Add(product);
-                existingProducts.Add(product.Id, product);
-                productsBySku[product.Sku] = product;
-                productsBySlug[product.Slug] = product;
+                _dbContext.Categories.Add(category);
+                existingCategories.Add(category.Id, category);
+                categorySlugs[category.Slug] = category;
             }
 
-            if (existingStockProductIds.Contains(seed.Id))
+            var existingBrands = await _dbContext.Brands
+                .ToDictionaryAsync(brand => brand.Id, cancellationToken);
+            var brandSlugs = existingBrands.Values
+                .ToDictionary(brand => brand.Slug, StringComparer.OrdinalIgnoreCase);
+
+            foreach (var seed in catalog.Brands)
             {
-                continue;
+                if (existingBrands.ContainsKey(seed.Id))
+                {
+                    continue;
+                }
+
+                var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
+
+                if (brandSlugs.TryGetValue(effectiveSlug, out var conflictingBrand) && conflictingBrand.Id != seed.Id)
+                {
+                    effectiveSlug = $"{effectiveSlug}-{seed.Id.ToString("N")[..6]}";
+                }
+
+                var brand = new Brand
+                {
+                    Id = seed.Id,
+                    Name = seed.Name,
+                    Slug = effectiveSlug,
+                    IsActive = true,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                };
+                _dbContext.Brands.Add(brand);
+                existingBrands.Add(brand.Id, brand);
+                brandSlugs[brand.Slug] = brand;
             }
 
-            _dbContext.Stocks.Add(new Stock
-            {
-                ProductId = seed.Id,
-                Quantity = seed.InitialStock,
-                ReorderLevel = seed.ReorderLevel,
-                UpdatedAtUtc = now
-            });
-            existingStockProductIds.Add(seed.Id);
+            var existingProducts = await _dbContext.Products
+                .ToDictionaryAsync(product => product.Id, cancellationToken);
+            var productsBySku = existingProducts.Values
+                .ToDictionary(product => product.Sku, StringComparer.OrdinalIgnoreCase);
+            var productsBySlug = existingProducts.Values
+                .ToDictionary(product => product.Slug, StringComparer.OrdinalIgnoreCase);
+            var existingStockProductIds = await _dbContext.Stocks
+                .Select(stock => stock.ProductId)
+                .ToHashSetAsync(cancellationToken);
 
-            if (seed.InitialStock > 0)
+            foreach (var seed in catalog.Products)
             {
-                _dbContext.StockMovements.Add(new StockMovement
+                if (!existingCategories.ContainsKey(seed.CategoryId)
+                    || !existingBrands.ContainsKey(seed.BrandId))
+                {
+                    throw new InvalidDataException(
+                        $"Canonical product '{seed.Sku}' references an unknown category or brand.");
+                }
+
+                var effectiveSlug = string.IsNullOrWhiteSpace(seed.Slug) ? GenerateSlug(seed.Name) : seed.Slug;
+
+                if (!existingProducts.TryGetValue(seed.Id, out var product))
+                {
+                    if (productsBySku.TryGetValue(seed.Sku, out var skuConflict) && skuConflict.Id != seed.Id)
+                    {
+                        throw new InvalidOperationException(
+                            $"Canonical SKU '{seed.Sku}' conflicts with product {skuConflict.Id}.");
+                    }
+
+                    if (productsBySlug.TryGetValue(effectiveSlug, out var slugConflict) && slugConflict.Id != seed.Id)
+                    {
+                        effectiveSlug = $"{effectiveSlug}-{seed.Id.ToString("N")[..6]}";
+                    }
+
+                    product = new Product
+                    {
+                        Id = seed.Id,
+                        Sku = seed.Sku,
+                        Name = seed.Name,
+                        Slug = effectiveSlug,
+                        Description = seed.Description,
+                        CategoryId = seed.CategoryId,
+                        BrandId = seed.BrandId,
+                        Price = seed.Price,
+                        VatRate = seed.VatRate,
+                        NetContent = seed.NetContent,
+                        UnitType = seed.UnitType,
+                        ImageUrl = seed.ImageUrl,
+                        IsActive = true,
+                        CreatedAtUtc = now,
+                        UpdatedAtUtc = now
+                    };
+                    _dbContext.Products.Add(product);
+                    existingProducts.Add(product.Id, product);
+                    productsBySku[product.Sku] = product;
+                    productsBySlug[product.Slug] = product;
+                }
+
+                if (existingStockProductIds.Contains(seed.Id))
+                {
+                    continue;
+                }
+
+                _dbContext.Stocks.Add(new Stock
                 {
                     ProductId = seed.Id,
-                    MovementType = StockMovementType.Initial,
-                    QuantityChange = seed.InitialStock,
-                    PreviousQuantity = 0,
-                    NewQuantity = seed.InitialStock,
-                    ReferenceType = StockReferenceType.Seed,
-                    Description = "Initial Seed Balance",
-                    CreatedByUserId = adminUserId,
-                    CreatedAtUtc = now
+                    Quantity = seed.InitialStock,
+                    ReorderLevel = seed.ReorderLevel,
+                    UpdatedAtUtc = now
                 });
-            }
-        }
+                existingStockProductIds.Add(seed.Id);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        if (transaction != null)
-        {
-            await transaction.CommitAsync(cancellationToken);
-            await transaction.DisposeAsync();
-        }
+                if (seed.InitialStock > 0)
+                {
+                    _dbContext.StockMovements.Add(new StockMovement
+                    {
+                        ProductId = seed.Id,
+                        MovementType = StockMovementType.Initial,
+                        QuantityChange = seed.InitialStock,
+                        PreviousQuantity = 0,
+                        NewQuantity = seed.InitialStock,
+                        ReferenceType = StockReferenceType.Seed,
+                        Description = "Initial Seed Balance",
+                        CreatedByUserId = adminUserId,
+                        CreatedAtUtc = now
+                    });
+                }
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            if (transaction != null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+            }
+        });
     }
 
     private static string GenerateSlug(string text)
