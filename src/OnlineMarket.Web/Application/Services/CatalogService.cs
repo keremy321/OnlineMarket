@@ -202,88 +202,96 @@ public sealed class CatalogService : ICatalogService
             UpdatedAtUtc = now
         };
 
-        var isRelational = _dbContext.Database.IsRelational();
-        await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
-        var parentCategoryId = await GetParentCategoryIdAsync(product.CategoryId);
-
-        _dbContext.Products.Add(product);
-        _dbContext.Stocks.Add(stock);
-
-        if (initialStock > 0)
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
-            _dbContext.StockMovements.Add(new StockMovement
+            var isRelational = _dbContext.Database.IsRelational();
+            await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
+            var parentCategoryId = await GetParentCategoryIdAsync(product.CategoryId);
+
+            _dbContext.Products.Add(product);
+            _dbContext.Stocks.Add(stock);
+
+            if (initialStock > 0)
             {
-                ProductId = productId,
-                MovementType = StockMovementType.Initial,
-                QuantityChange = initialStock,
-                PreviousQuantity = 0,
-                NewQuantity = initialStock,
-                ReferenceType = StockReferenceType.AdminOperation,
-                Description = "Initial Stock",
-                CreatedAtUtc = now
-            });
-        }
+                _dbContext.StockMovements.Add(new StockMovement
+                {
+                    ProductId = productId,
+                    MovementType = StockMovementType.Initial,
+                    QuantityChange = initialStock,
+                    PreviousQuantity = 0,
+                    NewQuantity = initialStock,
+                    ReferenceType = StockReferenceType.AdminOperation,
+                    Description = "Initial Stock",
+                    CreatedAtUtc = now
+                });
+            }
 
-        _dbContext.OutboxMessages.Add(CreateProductSnapshotMessage(
-            product,
-            parentCategoryId,
-            initialStock,
-            now));
+            _dbContext.OutboxMessages.Add(CreateProductSnapshotMessage(
+                product,
+                parentCategoryId,
+                initialStock,
+                now));
 
-        await _dbContext.SaveChangesAsync();
-        if (transaction != null)
-        {
-            await transaction.CommitAsync();
-        }
+            await _dbContext.SaveChangesAsync();
+            if (transaction != null)
+            {
+                await transaction.CommitAsync();
+            }
 
-        return (await GetProductByIdAsync(productId))!;
+            return (await GetProductByIdAsync(productId))!;
+        });
     }
 
     public async Task<ProductDto?> UpdateProductAsync(Guid id, ProductDto dto)
     {
-        var isRelational = _dbContext.Database.IsRelational();
-        await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
-        var product = await _dbContext.Products
-            .Include(candidate => candidate.Stock)
-            .FirstOrDefaultAsync(candidate => candidate.Id == id);
-
-        if (product is null)
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
+            var isRelational = _dbContext.Database.IsRelational();
+            await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
+            var product = await _dbContext.Products
+                .Include(candidate => candidate.Stock)
+                .FirstOrDefaultAsync(candidate => candidate.Id == id);
+
+            if (product is null)
+            {
+                if (transaction != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+                return null;
+            }
+
+            var now = UtcNowAtDatabasePrecision();
+            product.Name = dto.Name;
+            product.Sku = dto.Sku;
+            product.Description = dto.Description;
+            product.CategoryId = dto.CategoryId;
+            product.BrandId = dto.BrandId;
+            product.Price = dto.Price;
+            product.VatRate = dto.VatRate;
+            product.NetContent = dto.NetContent;
+            product.UnitType = dto.UnitType;
+            product.ImageUrl = dto.ImageUrl;
+            product.IsActive = dto.IsActive;
+            product.UpdatedAtUtc = now;
+
+            var parentCategoryId = await GetParentCategoryIdAsync(product.CategoryId);
+            _dbContext.OutboxMessages.Add(CreateProductSnapshotMessage(
+                product,
+                parentCategoryId,
+                product.Stock?.Quantity ?? 0,
+                now));
+
+            await _dbContext.SaveChangesAsync();
             if (transaction != null)
             {
-                await transaction.RollbackAsync();
+                await transaction.CommitAsync();
             }
-            return null;
-        }
 
-        var now = UtcNowAtDatabasePrecision();
-        product.Name = dto.Name;
-        product.Sku = dto.Sku;
-        product.Description = dto.Description;
-        product.CategoryId = dto.CategoryId;
-        product.BrandId = dto.BrandId;
-        product.Price = dto.Price;
-        product.VatRate = dto.VatRate;
-        product.NetContent = dto.NetContent;
-        product.UnitType = dto.UnitType;
-        product.ImageUrl = dto.ImageUrl;
-        product.IsActive = dto.IsActive;
-        product.UpdatedAtUtc = now;
-
-        var parentCategoryId = await GetParentCategoryIdAsync(product.CategoryId);
-        _dbContext.OutboxMessages.Add(CreateProductSnapshotMessage(
-            product,
-            parentCategoryId,
-            product.Stock?.Quantity ?? 0,
-            now));
-
-        await _dbContext.SaveChangesAsync();
-        if (transaction != null)
-        {
-            await transaction.CommitAsync();
-        }
-
-        return await GetProductByIdAsync(id);
+            return await GetProductByIdAsync(id);
+        });
     }
 
     public async Task<bool> AdjustStockAsync(
@@ -297,72 +305,76 @@ public sealed class CatalogService : ICatalogService
             return false;
         }
 
-        var isRelational = _dbContext.Database.IsRelational();
-        await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
-        var product = await _dbContext.Products
-            .FirstOrDefaultAsync(candidate => candidate.Id == productId);
-
-        if (product is null)
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async () =>
         {
+            var isRelational = _dbContext.Database.IsRelational();
+            await using var transaction = isRelational ? await _dbContext.Database.BeginTransactionAsync() : null;
+            var product = await _dbContext.Products
+                .FirstOrDefaultAsync(candidate => candidate.Id == productId);
+
+            if (product is null)
+            {
+                if (transaction != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+                return false;
+            }
+
+            var now = UtcNowAtDatabasePrecision();
+            var stockResult = await _stockMutationService.TryAdjustAsync(
+                productId,
+                quantityChange,
+                now);
+
+            if (stockResult is null)
+            {
+                if (transaction != null)
+                {
+                    await transaction.RollbackAsync();
+                }
+                return false;
+            }
+
+            _dbContext.StockMovements.Add(new StockMovement
+            {
+                ProductId = productId,
+                MovementType = quantityChange > 0
+                    ? StockMovementType.AdminIncrease
+                    : StockMovementType.AdminDecrease,
+                QuantityChange = quantityChange,
+                PreviousQuantity = stockResult.Value.PreviousQuantity,
+                NewQuantity = stockResult.Value.NewQuantity,
+                ReferenceType = StockReferenceType.AdminOperation,
+                Description = reason,
+                CreatedByUserId = userId == Guid.Empty ? null : userId,
+                CreatedAtUtc = now
+            });
+
+            var availabilityChanged =
+                (stockResult.Value.PreviousQuantity == 0)
+                != (stockResult.Value.NewQuantity == 0);
+
+            if (availabilityChanged)
+            {
+                product.UpdatedAtUtc = now;
+                var parentCategoryId = await GetParentCategoryIdAsync(product.CategoryId);
+                _dbContext.OutboxMessages.Add(CreateProductSnapshotMessage(
+                    product,
+                    parentCategoryId,
+                    stockResult.Value.NewQuantity,
+                    now));
+            }
+
+            await _dbContext.SaveChangesAsync();
             if (transaction != null)
             {
-                await transaction.RollbackAsync();
+                await transaction.CommitAsync();
             }
-            return false;
-        }
 
-        var now = UtcNowAtDatabasePrecision();
-        var stockResult = await _stockMutationService.TryAdjustAsync(
-            productId,
-            quantityChange,
-            now);
-
-        if (stockResult is null)
-        {
-            if (transaction != null)
-            {
-                await transaction.RollbackAsync();
-            }
-            return false;
-        }
-
-        _dbContext.StockMovements.Add(new StockMovement
-        {
-            ProductId = productId,
-            MovementType = quantityChange > 0
-                ? StockMovementType.AdminIncrease
-                : StockMovementType.AdminDecrease,
-            QuantityChange = quantityChange,
-            PreviousQuantity = stockResult.Value.PreviousQuantity,
-            NewQuantity = stockResult.Value.NewQuantity,
-            ReferenceType = StockReferenceType.AdminOperation,
-            Description = reason,
-            CreatedByUserId = userId == Guid.Empty ? null : userId,
-            CreatedAtUtc = now
+            return true;
         });
-
-        var availabilityChanged =
-            (stockResult.Value.PreviousQuantity == 0)
-            != (stockResult.Value.NewQuantity == 0);
-
-        if (availabilityChanged)
-        {
-            product.UpdatedAtUtc = now;
-            var parentCategoryId = await GetParentCategoryIdAsync(product.CategoryId);
-            _dbContext.OutboxMessages.Add(CreateProductSnapshotMessage(
-                product,
-                parentCategoryId,
-                stockResult.Value.NewQuantity,
-                now));
-        }
-
-        await _dbContext.SaveChangesAsync();
-        if (transaction != null)
-        {
-            await transaction.CommitAsync();
-        }
-
-        return true;
     }
 
     private IQueryable<Product> ProductQuery()

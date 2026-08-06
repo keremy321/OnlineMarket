@@ -105,6 +105,54 @@ public sealed class ProductImageService : IProductImageService
             return 0;
         }
 
+        // Load catalog.v1.json to obtain the canonical 1-based product ordering for p_001.jpg - p_205.jpg
+        var canonicalSlugToKey = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var catalogCandidates = new[]
+        {
+            Path.Combine(_environment.ContentRootPath, "..", "..", "scripts", "seed", "catalog.v1.json"),
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "scripts", "seed", "catalog.v1.json"),
+            Path.Combine(Directory.GetCurrentDirectory(), "scripts", "seed", "catalog.v1.json"),
+            @"C:\Users\Hyperionias\Desktop\Uyumsoft\OnlineMarket\scripts\seed\catalog.v1.json"
+        };
+
+        foreach (var candidate in catalogCandidates)
+        {
+            if (File.Exists(candidate))
+            {
+                try
+                {
+                    var jsonText = await File.ReadAllTextAsync(candidate, cancellationToken);
+                    using var doc = System.Text.Json.JsonDocument.Parse(jsonText);
+                    if (doc.RootElement.TryGetProperty("products", out var productsElem) ||
+                        doc.RootElement.TryGetProperty("Products", out productsElem))
+                    {
+                        int index = 1;
+                        foreach (var pElem in productsElem.EnumerateArray())
+                        {
+                            var key = $"p_{index:D3}";
+                            if (pElem.TryGetProperty("sku", out var skuProp) || pElem.TryGetProperty("Sku", out skuProp))
+                            {
+                                var skuSlug = Slugify(skuProp.GetString() ?? "");
+                                if (!string.IsNullOrEmpty(skuSlug)) canonicalSlugToKey[skuSlug] = key;
+                            }
+                            if (pElem.TryGetProperty("name", out var nameProp) || pElem.TryGetProperty("Name", out nameProp))
+                            {
+                                var nameSlug = Slugify(nameProp.GetString() ?? "");
+                                if (!string.IsNullOrEmpty(nameSlug)) canonicalSlugToKey[nameSlug] = key;
+                            }
+                            index++;
+                        }
+                    }
+                    _logger.LogInformation("Loaded {Count} canonical product image mappings from {CatalogPath}", canonicalSlugToKey.Count, candidate);
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to load catalog.v1.json from {Candidate}", candidate);
+                }
+            }
+        }
+
         var products = await _dbContext.Products
             .Where(p => p.IsActive)
             .ToListAsync(cancellationToken);
@@ -112,17 +160,20 @@ public sealed class ProductImageService : IProductImageService
         for (int i = 0; i < products.Count; i++)
         {
             var product = products[i];
-            var indexedKey = $"p_{(i + 1):D3}";
             var productSlug = Slugify(product.Name);
             var productSku = Slugify(product.Sku);
             var productNameRaw = product.Name.Trim().ToLowerInvariant();
 
             string? matchedUrl = null;
 
-            if (availableImages.TryGetValue(indexedKey, out var urlByIndex))
+            // 1. Check canonical catalog.v1.json mapping first
+            if ((canonicalSlugToKey.TryGetValue(productSku, out var canonicalKey) ||
+                 canonicalSlugToKey.TryGetValue(productSlug, out canonicalKey)) &&
+                availableImages.TryGetValue(canonicalKey, out var urlByCanonical))
             {
-                matchedUrl = urlByIndex;
+                matchedUrl = urlByCanonical;
             }
+            // 2. Fallback to direct slug/SKU/raw name matching
             else if (availableImages.TryGetValue(productSlug, out var urlBySlug))
             {
                 matchedUrl = urlBySlug;

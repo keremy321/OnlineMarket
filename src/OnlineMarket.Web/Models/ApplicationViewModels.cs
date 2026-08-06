@@ -97,6 +97,13 @@ public class CatalogIndexViewModel
     public decimal? MaxPrice { get; set; }
     public bool InStockOnly { get; set; }
     public string SortBy { get; set; } = "newest";
+
+    public int CurrentPage { get; set; } = 1;
+    public int PageSize { get; set; } = 18;
+    public int TotalItems { get; set; }
+    public int TotalPages => PageSize > 0 ? (int)Math.Ceiling((double)TotalItems / PageSize) : 0;
+    public bool HasPreviousPage => CurrentPage > 1;
+    public bool HasNextPage => CurrentPage < TotalPages;
 }
 
 public class ProductDetailViewModel

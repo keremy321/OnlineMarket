@@ -138,6 +138,50 @@ body {
 .subnav-scroll-btn:hover {
   background: var(--primary-color);
   color: #ffffff;
+}
+
+/* Pagination */
+.pagination-rounded .page-item {
+  margin: 0 2px;
+}
+
+.pagination-rounded .page-item-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 9999px;
+  background: #ffffff;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.pagination-rounded .page-item-link:hover {
+  background: var(--primary-light);
+  color: var(--primary-color);
+  border-color: var(--primary-color);
+}
+
+.pagination-rounded .page-item.active .page-item-link {
+  background: var(--primary-color);
+  color: #ffffff;
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-sm);
+}
+
+.pagination-rounded .page-item.disabled .page-item-link {
+  opacity: 0.5;
+  pointer-events: none;
+  background: #f1f5f9;
+}
+
+.subnav-scroll-btn:hover {
+  background: var(--primary-color);
+  color: #ffffff;
   box-shadow: var(--shadow-md);
   opacity: 1;
 }
@@ -364,3 +408,167 @@ main {
   border-top: 1px solid var(--border-color);
   color: var(--text-secondary);
 }
+
+/* Mobile Bottom Navigation Bar */
+.mobile-bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-top: 1px solid var(--border-color);
+  z-index: 1040;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  box-shadow: 0 -4px 15px rgba(0, 0, 0, 0.05);
+  padding: 0 0.5rem;
+}
+
+.mobile-nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.7rem;
+  font-weight: 600;
+  position: relative;
+  width: 20%;
+  height: 100%;
+  transition: all 0.2s ease;
+}
+
+.mobile-nav-item i {
+  font-size: 1.35rem;
+  margin-bottom: 2px;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.mobile-nav-item:hover, .mobile-nav-item.active {
+  color: var(--primary-color);
+}
+
+.mobile-nav-item.active i {
+  transform: translateY(-2px);
+  color: var(--primary-color);
+}
+
+.mobile-nav-badge {
+  position: absolute;
+  top: 6px;
+  right: 50%;
+  transform: translateX(14px);
+  background-color: var(--secondary-color);
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+  border-radius: 9999px;
+  padding: 0.15rem 0.4rem;
+  line-height: 1;
+  border: 1.5px solid #ffffff;
+}
+
+/* Offcanvas Drawer Enhancements */
+.offcanvas-custom {
+  border-top-right-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
+}
+
+.offcanvas-header-custom {
+  background: linear-gradient(135deg, var(--primary-color), #8b5cf6);
+  color: #ffffff;
+}
+
+.offcanvas-header-custom .btn-close {
+  filter: invert(1);
+}
+
+.drawer-category-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  text-decoration: none;
+  font-weight: 600;
+  transition: background-color 0.2s ease;
+}
+
+.drawer-category-item:hover, .drawer-category-item.active {
+  background-color: var(--primary-light);
+  color: var(--primary-color);
+}
+
+/* Mobile Responsiveness Improvements */
+@media (max-width: 767.98px) {
+  body {
+    padding-bottom: 64px; /* Ensure space for fixed bottom bar */
+  }
+
+  .navbar-custom {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .brand-icon-wrapper {
+    width: 34px;
+    height: 34px;
+    font-size: 1.1rem;
+  }
+
+  .navbar-brand {
+    font-size: 1.2rem;
+  }
+
+  .hero-card {
+    border-radius: var(--radius-lg);
+    padding: 1.25rem !important;
+  }
+
+  .product-img-wrapper {
+    min-height: 120px;
+    padding: 1rem;
+  }
+
+  .product-img-wrapper img {
+    max-height: 110px !important;
+  }
+
+  .product-card-modern {
+    padding: 0.75rem !important;
+  }
+
+  .price-tag {
+    font-size: 1.1rem;
+  }
+
+  /* Compact Cart Table for Mobile */
+  .table-responsive {
+    border-radius: var(--radius-md);
+  }
+
+  /* Touch Target minimum heights */
+  .btn, .form-control, .form-select, .nav-sublink {
+    min-height: 42px;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .hero-card h1 {
+    font-size: 1.65rem !important;
+  }
+  
+  .hero-card p {
+    font-size: 0.95rem !important;
+  }
+
+  .subnav-scroll-btn {
+    display: none !important;
+  }
+}
+
