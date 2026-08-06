@@ -24,15 +24,10 @@ public class RecommendationApiClient : IRecommendationClient
     private static DateTime _offlineUntilUtc = DateTime.MinValue;
     private static readonly object _lock = new();
 
-    public RecommendationApiClient(HttpClient httpClient, ILogger<RecommendationApiClient> logger)
-        : this(httpClient, logger, options: null)
-    {
-    }
-
     public RecommendationApiClient(
         HttpClient httpClient,
         ILogger<RecommendationApiClient> logger,
-        IOptions<RecommendationApiClientOptions>? options)
+        IOptions<RecommendationApiClientOptions>? options = null)
     {
         _httpClient = httpClient;
         _logger = logger;
